@@ -1,6 +1,6 @@
 # 构建 Windows 安装包(dist\yanhektddl-setup-<版本>.exe)
-# 用法:pwsh build-installer.ps1 [-Version 0.3.0]
-param([string]$Version = "0.3.0")
+# 用法:pwsh build-installer.ps1 [-Version 0.3.1]
+param([string]$Version = "0.3.1")
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
