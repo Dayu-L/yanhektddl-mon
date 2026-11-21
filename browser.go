@@ -1,18 +1,25 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/rod/lib/proto"
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/chromedp"
 )
 
 var errNotLoggedIn = errors.New("未登录")
+
+const (
+	navSettle  = 2 * time.Second  // 页面跳转后的稳定等待(与旧版一致)
+	eclassWait = 3 * time.Second  // eclass SSO 跳转等待
+	actionTO   = 60 * time.Second // 单次导航/脚本执行上限
+)
 
 // ---------------------------------------------------------------- 浏览器会话
 
@@ -32,66 +39,100 @@ func findBrowserBin() string {
 	return ""
 }
 
-// launchBrowser 启动持久化 Edge/Chrome(独立 profile,不影响日常使用的浏览器)。
+// browserSession 一个受控的 Edge/Chrome 实例(独立 profile,不影响日常浏览器)。
 //
-// 注意:必须 Leakless(false)。rod 默认会在 %TEMP% 释放 leakless.exe 监视宿主进程,
-// 该行为极易触发 Windows Defender/杀软误报("Temp 目录自解压执行");正常退出路径
-// 依赖 CDP Browser.close 杀掉浏览器,异常残留由 killStaleBrowsers 兑底。
-func launchBrowser(headless bool) (*rod.Browser, error) {
-	killStaleBrowsers()
+// 库选型说明:chromedp 纯 CDP 实现,浏览器直接作为本进程子进程启动,
+// 不向 %TEMP% 或其他位置释放任何辅助可执行文件,避免杀软误报
+// (前一代 rod 默认释放 leakless.exe,Windows Defender 屡次误判为木马)。
+type browserSession struct {
+	allocCtx    context.Context
+	cancelAlloc context.CancelFunc
+	tab         context.Context
+	cancelTab   context.CancelFunc
+}
+
+// openBrowser 启动持久化浏览器;visible=true 时显示窗口(供人工登录)。
+func openBrowser(visible bool) (*browserSession, error) {
+	killStaleBrowsers() // 清掉上次异常退出占着 profile 锁的残留进程
+
 	bin := findBrowserBin()
 	if bin == "" {
 		return nil, errors.New("未找到 Microsoft Edge / Chrome,无法启动抓取浏览器")
 	}
-	u, err := launcher.New().
-		Bin(bin).
-		UserDataDir(profileDir).
-		Headless(headless).
-		Leakless(false).
-		Set("no-first-run").
-		Set("no-default-browser-check").
-		Set("disable-blink-features", "AutomationControlled").
-		Launch()
-	if err != nil {
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(bin),
+		chromedp.UserDataDir(profileDir),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
+		echdpFlagAntiAutomation(),
+	)
+	if visible {
+		// 移除 headless / enable-automation 等,窗口行为与手动打开一致
+		opts = append(opts, chromedp.VisibleWindow)
+	} else {
+		opts = append(opts, chromedp.Flag("enable-automation", false))
+	}
+
+	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+	tab, cancelTab := chromedp.NewContext(alloc)
+	// 第一次 Run 才真正拉起浏览器;注意不要带超时的 ctx 来做这件事
+	if err := chromedp.Do(tab); err != nil {
+		cancelTab()
+		cancelAlloc()
 		return nil, err
 	}
-	b := rod.New().ControlURL(u)
-	if err := b.Connect(); err != nil {
-		return nil, err
-	}
-	return b, nil
+	return &browserSession{allocCtx: alloc, cancelAlloc: cancelAlloc,
+		tab: tab, cancelTab: cancelTab}, nil
 }
 
-func firstPage(b *rod.Browser) *rod.Page {
-	if pages, err := b.Pages(); err == nil && len(pages) > 0 {
-		return pages[0]
-	}
-	p, err := b.Page(proto.TargetCreateTarget{})
-	if err != nil {
-		return nil
-	}
-	return p
+func echdpFlagAntiAutomation() chromedp.ExecAllocatorOption {
+	return chromedp.Flag("disable-blink-features", "AutomationControlled")
 }
 
-// evalJSON 在页面里执行 JS,返回其 JSON.stringify 的字符串结果
-func evalJSON(page *rod.Page, js string, args ...interface{}) (string, error) {
-	res, err := page.Eval(js, args...)
-	if err != nil {
-		return "", err
+func (s *browserSession) close() {
+	s.cancelTab()
+	s.cancelAlloc() // 浏览器随本会话退出而终止
+}
+
+// navigate 跳转并等待页面稳定(对应旧版 goto + sleep)
+func (s *browserSession) navigate(url string, settle time.Duration) error {
+	nctx, cancel := context.WithTimeout(s.tab, actionTO)
+	defer cancel()
+	if err := chromedp.Do(nctx, chromedp.Navigate(url)); err != nil {
+		return err
 	}
-	return res.Value.Str(), nil
+	time.Sleep(settle)
+	return nil
+}
+
+// eval 在当前页面执行 JS 表达式,返回其结果字符串(配合 EvalAwaitPromise 支持异步)
+func (s *browserSession) eval(jsExpr string) (string, error) {
+	nctx, cancel := context.WithTimeout(s.tab, actionTO)
+	defer cancel()
+	return chromedp.Run(nctx, chromedp.Evaluate[string](jsExpr, chromedp.EvalAwaitPromise))
+}
+
+// bringToFront 激活标签页(登录时把窗口带前台)
+func (s *browserSession) bringToFront() {
+	_, _ = chromedp.Run(s.tab, func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+		_, err := cdp.Call(ctx, t, page.BringToFront, cdp.Empty{})
+		return chromedp.Void{}, err
+	})
+}
+
+// resetTab 标签页被用户关掉后重建
+func (s *browserSession) resetTab() error {
+	s.cancelTab()
+	s.tab, s.cancelTab = chromedp.NewContext(s.allocCtx)
+	return chromedp.Do(s.tab)
 }
 
 // ---------------------------------------------------------------- 登录与抓取
 
 // waitLogin 弹出可见窗口等待用户完成登录(含验证码),轮询直到会话生效。
-func waitLogin(b *rod.Browser, timeout time.Duration) bool {
-	page := firstPage(b)
-	if page == nil {
-		return false
-	}
-	_ = page.Navigate(portalURL)
-	_ = proto.PageBringToFront{}.Call(page)
+func waitLogin(s *browserSession, timeout time.Duration) bool {
+	_ = s.navigate(portalURL, navSettle)
+	s.bringToFront()
 	fmt.Println()
 	fmt.Println("============================================================")
 	fmt.Println(">>> 需要登录延河课堂:请在刚弹出的 Edge 窗口中输入 <<<")
@@ -102,18 +143,17 @@ func waitLogin(b *rod.Browser, timeout time.Duration) bool {
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		s, err := evalJSON(page, jsCheckLogin)
+		out, err := s.eval("(" + jsCheckLogin + ")()")
 		if err != nil { // 页面可能被用户关闭 -> 自动重开
-			page = firstPage(b)
-			if page != nil {
-				_ = page.Navigate(portalURL)
-				_ = proto.PageBringToFront{}.Call(page)
+			if rerr := s.resetTab(); rerr == nil {
+				_ = s.navigate(portalURL, navSettle)
+				s.bringToFront()
 			}
 		} else {
 			var chk struct {
 				Ok bool `json:"ok"`
 			}
-			if json.Unmarshal([]byte(s), &chk) == nil && chk.Ok {
+			if json.Unmarshal([]byte(out), &chk) == nil && chk.Ok {
 				fmt.Println(">> 登录成功,会话已保存到 browser_profile (下次免登录)")
 				return true
 			}
@@ -131,29 +171,21 @@ type collectResult struct {
 
 // tryCollect 阶段1(延河课堂课程)+ 阶段2(eclass 任务)。
 // 未登录 -> errNotLoggedIn;成功 -> 结构化结果。
-func tryCollect(b *rod.Browser) (*collectResult, error) {
-	page := firstPage(b)
-	if page == nil {
-		return nil, errors.New("无法创建浏览器页面")
-	}
+func tryCollect(s *browserSession) (*collectResult, error) {
 	// ---- 阶段 1:延河课堂(课程列表 + 课程关闭时间) ----
-	if err := page.Navigate(portalURL); err != nil {
-		return nil, err
-	}
-	time.Sleep(2 * time.Second)
-
-	s, err := evalJSON(page, jsCheckLogin)
-	if err != nil {
+	if err := s.navigate(portalURL, navSettle); err != nil {
 		return nil, err
 	}
 	var chk struct {
 		Ok bool `json:"ok"`
 	}
-	if err := json.Unmarshal([]byte(s), &chk); err != nil || !chk.Ok {
+	if out, err := s.eval("(" + jsCheckLogin + ")()"); err != nil {
+		return nil, err
+	} else if json.Unmarshal([]byte(out), &chk) != nil || !chk.Ok {
 		return nil, errNotLoggedIn
 	}
 
-	s, err = evalJSON(page, jsFetchCourses)
+	out, err := s.eval("(" + jsFetchCourses + ")()")
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +194,7 @@ func tryCollect(b *rod.Browser) (*collectResult, error) {
 		Courses []Course `json:"courses"`
 		Error   string   `json:"error"`
 	}
-	if err := json.Unmarshal([]byte(s), &coursesRes); err != nil {
+	if err := json.Unmarshal([]byte(out), &coursesRes); err != nil {
 		return nil, err
 	}
 	if coursesRes.Error != "" {
@@ -181,9 +213,11 @@ func tryCollect(b *rod.Browser) (*collectResult, error) {
 		Items: []Item{}, Submitted: map[string][]interface{}{}}
 	if len(zyIDs) > 0 {
 		// 任意课程页触发 CAS->eclass SSO,自动建立 eclass 会话
-		_ = page.Navigate(eclassBase + "/course/" + zyIDs[0] + "/content")
-		time.Sleep(3 * time.Second)
-		s, err = evalJSON(page, jsCollectEclass, zyIDs)
+		if err := s.navigate(eclassBase+"/course/"+zyIDs[0]+"/content", eclassWait); err != nil {
+			return nil, err
+		}
+		zyJSON, _ := json.Marshal(zyIDs)
+		out, err = s.eval("(" + jsCollectEclass + ")(" + string(zyJSON) + ")")
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +225,7 @@ func tryCollect(b *rod.Browser) (*collectResult, error) {
 			Items          []Item                   `json:"items"`
 			SubmittedExams map[string][]interface{} `json:"submittedExams"`
 		}
-		if err := json.Unmarshal([]byte(s), &ec); err != nil {
+		if err := json.Unmarshal([]byte(out), &ec); err != nil {
 			return nil, err
 		}
 		res.Items = ec.Items
@@ -208,33 +242,32 @@ func tryCollect(b *rod.Browser) (*collectResult, error) {
 
 // collectSnapshot 完整抓取一次并保存 ddl_data.json;需要时自动弹 Edge 登录窗。
 func collectSnapshot(days int, visible bool) (*Snapshot, error) {
-	b, err := launchBrowser(!visible)
+	// visible 仅供 --fetch --visible 调试:直接以可见窗口抓取
+	s, err := openBrowser(visible)
 	if err != nil {
 		return nil, err
 	}
+	defer s.close()
 
-	res, err := tryCollect(b)
-	if err == errNotLoggedIn { // 需要人工登录 -> 换可见窗口
-		_ = b.Close()
-		b, err = launchBrowser(false)
+	res, err := tryCollect(s)
+	if err == errNotLoggedIn && !visible { // 需要人工登录 -> 换可见窗口
+		s.close()
+		s, err = openBrowser(true)
 		if err != nil {
 			return nil, err
 		}
-		if !waitLogin(b, loginWait) {
-			_ = b.Close()
+		defer s.close()
+		if !waitLogin(s, loginWait) {
 			return nil, errors.New("等待登录超时,未获取到有效会话")
 		}
-		res, err = tryCollect(b)
+		res, err = tryCollect(s)
 		if err == errNotLoggedIn {
-			_ = b.Close()
 			return nil, errors.New("登录后仍未获取到有效会话,请检查账号")
 		}
 	}
 	if err != nil {
-		_ = b.Close()
 		return nil, err
 	}
-	_ = b.Close()
 
 	snap := &Snapshot{
 		FetchedAt:      time.Now().In(TZ).Format(time.RFC3339),
@@ -247,6 +280,8 @@ func collectSnapshot(days int, visible bool) (*Snapshot, error) {
 	}
 	return snap, nil
 }
+
+// ---------------------------------------------------------------- 快照读写
 
 func saveSnapshot(snap *Snapshot) error {
 	f, err := os.Create(dataJSON)
@@ -265,7 +300,7 @@ func loadSnapshot() (*Snapshot, error) {
 }
 
 func loadSnapshotFrom(path string) (*Snapshot, error) {
-	b, err := os.ReadFile(dataJSON)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
