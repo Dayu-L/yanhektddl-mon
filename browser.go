@@ -33,7 +33,12 @@ func findBrowserBin() string {
 }
 
 // launchBrowser 启动持久化 Edge/Chrome(独立 profile,不影响日常使用的浏览器)。
+//
+// 注意:必须 Leakless(false)。rod 默认会在 %TEMP% 释放 leakless.exe 监视宿主进程,
+// 该行为极易触发 Windows Defender/杀软误报("Temp 目录自解压执行");正常退出路径
+// 依赖 CDP Browser.close 杀掉浏览器,异常残留由 killStaleBrowsers 兑底。
 func launchBrowser(headless bool) (*rod.Browser, error) {
+	killStaleBrowsers()
 	bin := findBrowserBin()
 	if bin == "" {
 		return nil, errors.New("未找到 Microsoft Edge / Chrome,无法启动抓取浏览器")
@@ -42,6 +47,7 @@ func launchBrowser(headless bool) (*rod.Browser, error) {
 		Bin(bin).
 		UserDataDir(profileDir).
 		Headless(headless).
+		Leakless(false).
 		Set("no-first-run").
 		Set("no-default-browser-check").
 		Set("disable-blink-features", "AutomationControlled").

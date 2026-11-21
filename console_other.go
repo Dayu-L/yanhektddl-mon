@@ -11,3 +11,5 @@ func utf8Console() {}
 func msgBox(text, caption string) {
 	println(caption + ": " + text)
 }
+
+func killStaleBrowsers() {}
