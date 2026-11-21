@@ -64,5 +64,37 @@ Filename: "taskkill"; Parameters: "/IM {#MyAppExeName} /F"; Flags: runhidden; Ru
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--uninstall-task"; Flags: runhidden; RunOnceId: "DelTask"
 
 [UninstallDelete]
-; 只删程序日志,保留 browser_profile / ddl_data.json / ddl_report.*(用户隐私数据)
+; 登录数据(下述 [Code] 会询问)除外,只自动删程序日志
 Type: files; Name: "{app}\server.log"
+
+[Code]
+// 停掉主程序 + 占用本程序 browser_profile 的抓取浏览器(强杀主程序后会遗留孤儿 Edge,
+// 不处理则数据删除/目录移除会因文件锁失败)
+procedure KillAppAndStaleBrowsers;
+var
+  rc: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM yanhektddl.exe /F',
+    '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Exec('powershell.exe',
+    '-NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq ''msedge.exe'' -or $_.Name -eq ''chrome.exe'') -and $_.CommandLine -like ''*' + ExpandConstant('{app}') + '\browser_profile*'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
+    '', SW_HIDE, ewWaitUntilTerminated, rc);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep <> usUninstall then exit;
+  KillAppAndStaleBrowsers;
+  // 静默卸载(/VERYSILENT)不弹窗,默认保留数据
+  if UninstallSilent then exit;
+  if MsgBox('是否保留用户数据?'
+      + #13#10 + '保留:browser_profile(登录会话)、ddl_data.json、ddl_report.*(推荐)'
+      + #13#10 + '删除:登录会话与报告一并清除,卸载后不残留任何数据',
+      mbConfirmation, MB_YESNO) = IDNO then
+  begin
+    DelTree(ExpandConstant('{app}\browser_profile'), True, True, True);
+    DeleteFile(ExpandConstant('{app}\ddl_data.json'));
+    DeleteFile(ExpandConstant('{app}\ddl_report.md'));
+    DeleteFile(ExpandConstant('{app}\ddl_report.csv'));
+  end;
+end;
