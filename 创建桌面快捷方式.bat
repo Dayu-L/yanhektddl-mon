@@ -1,4 +1,5 @@
 @echo off
+rem NOTE: keep ANSI(GBK)+CRLF; do NOT re-save as UTF-8.
 title 延河课堂 DDL - 创建桌面快捷方式
 powershell -NoProfile -Command ^
   "$ws = New-Object -ComObject WScript.Shell;" ^

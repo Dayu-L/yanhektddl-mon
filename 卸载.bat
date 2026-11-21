@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+rem NOTE: keep ANSI(GBK)+CRLF; do NOT re-save as UTF-8.
 title 延河课堂 DDL - 卸载
 echo ============================================================
 echo  将执行以下清理:
