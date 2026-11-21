@@ -1,24 +1,24 @@
 @echo off
 chcp 65001 >nul
-title 延河课堂 DDL - 卸载
+title �Ӻӿ��� DDL - ж��
 echo ============================================================
-echo  将执行以下清理:
-echo    1. 结束运行中的 yanhektddl.exe
-echo    2. 删除每日 9:00 巡检计划任务
-echo    3. 删除桌面快捷方式
+echo  ��ִ����������:
+echo    1. ���������е� yanhektddl.exe
+echo    2. ɾ��ÿ�� 9:00 Ѳ��ƻ�����
+echo    3. ɾ�������ݷ�ʽ
 echo ============================================================
-set /p CONFIRM=确认卸载请输入 y 回车:
+set /p CONFIRM=ȷ��ж�������� y �س�:
 if /i not "%CONFIRM%"=="y" (
-  echo 已取消,未做任何更改。
+  echo ��ȡ��,δ���κθ��ġ�
   pause
   exit /b 0
 )
 taskkill /IM yanhektddl.exe /F >nul 2>&1
 schtasks /Delete /TN YanhektDDLMonitor /F >nul 2>&1
-del "%USERPROFILE%\Desktop\延河课堂DDL.lnk" >nul 2>&1
+del "%USERPROFILE%\Desktop\�Ӻӿ���DDL.lnk" >nul 2>&1
 echo.
-echo 清理完成。登录会话与报告数据都在本目录,确认无需保留后
-echo 手动删除整个文件夹即可彻底清除:
+echo ������ɡ���¼�Ự�뱨�����ݶ��ڱ�Ŀ¼,ȷ�����豣����
+echo �ֶ�ɾ�������ļ��м��ɳ������:
 echo   %~dp0
 echo.
 pause

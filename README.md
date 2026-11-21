@@ -38,6 +38,17 @@
 
 ## 快速开始(使用者)
 
+**方式一:安装包(推荐)**
+
+运行 `yanhektddl-setup-<版本>.exe`,一路下一步:
+
+- 免管理员、免 UAC,安装到 `%LOCALAPPDATA%\Programs\YanhektDDL`(Chrome 同款目录)
+- 自动创建开始菜单/桌面图标,可勾选「每天 9:00 自动巡检提醒」
+- 在「设置 → 应用」里一键卸载:自动停服务、删计划任务、删图标;
+  登录数据与报告保留在安装目录,手动删除即彻底清除
+
+**方式二:便携版**
+
 1. 把程序文件夹解压/放到任意位置(建议非系统盘)
 2. 双击 **`yanhektddl.exe`** → 首次运行自动弹出 Edge 窗口,
    登录一次延河课堂(账号 + 密码 + 图形验证码,只需这一次)
@@ -105,10 +116,18 @@ yanhektddl.exe --days 7              # "临期"阈值改为 7 天
 在"病毒和威胁防护 → 保护历史记录"里移除即可;若 exe 本体被隔离,
 对其添加排除项后重新下载/构建。
 
+长期分发的根治方案是**代码签名**:无签名的新 exe 总有机会触发
+Defender/SmartScreen 启发式(与是否用安装包无关);Azure Trusted Signing
+已对个人开发者开放(约 $9.99/月),签名后误报问题基本消失。
+
 ## 卸载
 
-双击程序文件夹里的 **`卸载.bat`**,按提示输入 `y` 回车即可 → 自动删除桌面图标、
-巡检任务、运行中的服务和整个文件夹。
+**安装版**:「设置 → 应用 → 延河课堂 DDL」卸载,或运行安装目录里的
+`unins000.exe`。自动停服务、删计划任务、删图标;登录数据与报告保留在
+安装目录,手动删除即彻底清除。
+
+**便携版**:双击程序文件夹里的 **`卸载.bat`**,按提示输入 `y` 回车即可 →
+自动删除桌面图标、巡检任务、运行中的服务和整个文件夹。
 
 手动卸载(等价操作):
 
@@ -123,11 +142,13 @@ yanhektddl.exe --days 7              # "临期"阈值改为 7 天
 
 ```
 yanhektddl-mon/
-├─ main.go / browser.go / report.go / server.go / notify.go / task.go / js.go …
-│                        # Go 实现:单文件 exe,驱动系统 Edge 完成抓取
+├─ main.go / browser.go / report.go / server.go / desktop.go / notify.go / task.go / js.go …
+│                        # Go 实现:chromedp 驱动系统 Edge 完成抓取
 ├─ dashboard.html        # 速查窗口前端页面(go:embed 打入 exe,无需单独分发)
-├─ 创建桌面快捷方式.bat    # (可选)为 exe 建桌面图标
-├─ 卸载.bat               # 卸载:停服务、删图标、删计划任务、删目录
+├─ installer.iss         # Inno Setup 安装包脚本(免管理员、标准卸载入口)
+├─ build-installer.ps1   # 一键构建安装包 → dist/yanhektddl-setup-<版本>.exe
+├─ 创建桌面快捷方式.bat    # (可选)为便携版 exe 建桌面图标
+├─ 卸载.bat               # 便携版卸载:停服务、删图标、删计划任务、删目录
 ├─ legacy_python/         # 旧版 Python/Playwright 实现及各安装向导,仅存档
 ├─ README.md              # 本文件:使用手册 + 开发指引
 └─ LICENSE                # MIT
@@ -172,6 +193,13 @@ go build -trimpath -ldflags "-s -w" -o yanhektddl.exe .
 
 # 桌面模式:本地服务 + 速查页面
 ./yanhektddl.exe   # 同“无参数”
+
+# 浏览器连通性冒烟测试(真实 headless Edge 起停,无需登录)
+go test -run TestBrowserSmoke -v .
+
+# 构建 Windows 安装包(需 Inno Setup,缺失时自动经 winget 安装)
+./build-installer.ps1            # 产出 dist/yanhektddl-setup-<版本>.exe
+./build-installer.ps1 -Version 1.1.0
 ```
 
 开发期也可以 `go run .` 代替构建(数据目录会自动落到工作目录)。

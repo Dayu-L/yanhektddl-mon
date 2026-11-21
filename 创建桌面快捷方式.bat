@@ -1,16 +1,15 @@
 @echo off
-chcp 65001 >nul
-title å»¶æ²³è¯¾å ‚ DDL - åˆ›å»ºæ¡Œé¢å¿«æ·æ–¹å¼
+title ÑÓºÓ¿ÎÌÃ DDL - ´´½¨×ÀÃæ¿ì½İ·½Ê½
 powershell -NoProfile -Command ^
   "$ws = New-Object -ComObject WScript.Shell;" ^
-  "$lnk = $ws.CreateShortcut([IO.Path]::Combine($env:USERPROFILE, 'Desktop', 'å»¶æ²³è¯¾å ‚DDL.lnk'));" ^
+  "$lnk = $ws.CreateShortcut([IO.Path]::Combine($env:USERPROFILE, 'Desktop', 'ÑÓºÓ¿ÎÌÃDDL.lnk'));" ^
   "$lnk.TargetPath = '%~dp0yanhektddl.exe';" ^
   "$lnk.WorkingDirectory = '%~dp0';" ^
   "$lnk.IconLocation = '%~dp0yanhektddl.exe, 0';" ^
   "$lnk.Save()"
-if exist "%USERPROFILE%\Desktop\å»¶æ²³è¯¾å ‚DDL.lnk" (
-  echo å·²åˆ›å»ºæ¡Œé¢å¿«æ·æ–¹å¼:å»¶æ²³è¯¾å ‚DDL
+if exist "%USERPROFILE%\Desktop\ÑÓºÓ¿ÎÌÃDDL.lnk" (
+  echo ÒÑ´´½¨×ÀÃæ¿ì½İ·½Ê½:ÑÓºÓ¿ÎÌÃDDL
 ) else (
-  echo åˆ›å»ºå¤±è´¥,è¯·æ‰‹åŠ¨ä¸º yanhektddl.exe åˆ›å»ºå¿«æ·æ–¹å¼
+  echo ´´½¨Ê§°Ü,ÇëÊÖ¶¯Îª yanhektddl.exe ´´½¨¿ì½İ·½Ê½
 )
 pause
