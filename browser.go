@@ -52,9 +52,27 @@ type browserSession struct {
 }
 
 // openBrowser 启动持久化浏览器;visible=true 时显示窗口(供人工登录)。
+// 启动失败("chrome failed to start",典型原因是上次强杀宿主遗留的孤儿 Edge
+// 占着 profile 锁)时自动清锁重试,让登录向导具备自愈能力。
 func openBrowser(visible bool) (*browserSession, error) {
-	killStaleBrowsers() // 清掉上次异常退出占着 profile 锁的残留进程
+	var s *browserSession
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		killStaleBrowsers() // 清掉强杀宿主后遗留的孤儿 Edge(占着 profile 锁)
+		s, err = tryOpenBrowser(visible)
+		if err == nil {
+			return s, nil
+		}
+		if attempt == 3 {
+			break
+		}
+		logger.Printf("[浏览器] 第 %d 次启动失败:%v;清理残留后重试", attempt, err)
+		time.Sleep(1500 * time.Millisecond)
+	}
+	return nil, err
+}
 
+func tryOpenBrowser(visible bool) (*browserSession, error) {
 	bin := findBrowserBin()
 	if bin == "" {
 		return nil, errors.New("未找到 Microsoft Edge / Chrome,无法启动抓取浏览器")
@@ -252,6 +270,9 @@ func collectSnapshot(days int, visible bool) (*Snapshot, error) {
 	res, err := tryCollect(s)
 	if err == errNotLoggedIn && !visible { // 需要人工登录 -> 换可见窗口
 		s.close()
+		// headless Edge 的终止是异步的:立即重开可见窗口会撞上 profile 锁,
+		// Edge 静默移交后瞬间退出 -> "chrome failed to start"
+		time.Sleep(time.Second)
 		s, err = openBrowser(true)
 		if err != nil {
 			return nil, err

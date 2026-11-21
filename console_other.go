@@ -2,6 +2,8 @@
 
 package main
 
+import "os/exec"
+
 // 非 Windows 平台的占位实现(便于交叉编译检查)
 
 func freeConsole() {}
@@ -13,3 +15,5 @@ func msgBox(text, caption string) {
 }
 
 func killStaleBrowsers() {}
+
+func hiddenWindow(cmd *exec.Cmd) {}

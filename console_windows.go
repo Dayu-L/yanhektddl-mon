@@ -34,6 +34,11 @@ func msgBox(text, caption string) {
 	procMsgBox.Call(0, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(c)), 0x30)
 }
 
+// hiddenWindow 令子进程不弹控制台窗口(无论本进程是否已 FreeConsole)
+func hiddenWindow(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+}
+
 // killStaleBrowsers 清理上次异常退出后残留的抓取浏览器(占着 profile 锁会导致启动失败)。
 // 只杀命令行里携带本程序 browser_profile 路径的进程,不影响用户日常使用的 Edge/Chrome。
 func killStaleBrowsers() {
@@ -43,5 +48,6 @@ func killStaleBrowsers() {
 			` ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
 		profileDir)
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", ps)
+	hiddenWindow(cmd)
 	_ = cmd.Run() // 查不到就是空操作,失败也不阻塞抓取
 }
