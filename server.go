@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -218,7 +219,107 @@ func newMux() http.Handler {
 		go runRefresh(3)
 		sendJSON(w, 200, map[string]bool{"ok": true})
 	})
+	// 窗口存活探测:页面 EventSource 长连接,全部断开 -> 服务自动退出
+	mux.HandleFunc("/api/live", liveServe)
+	// 手动退出(--quit):本机任意进程 POST 即可让服务优雅退出
+	mux.HandleFunc("/api/quit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			sendText(w, 404, "not found")
+			return
+		}
+		sendJSON(w, 200, map[string]bool{"ok": true})
+		logger.Printf(">> 收到退出请求,服务即将退出")
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			os.Exit(0)
+		}()
+	})
 	return mux
+}
+
+// ---------------------------------------------------------------- 窗口存活监控
+// 桌面服务进程已脱离控制台,用户没有任何 GUI 手段感知/关闭它;因此把
+// 「关闭速查窗口」定义为退出语义:页面用 EventSource 维持长连接(SSE,
+// 不受浏览器后台节流影响),所有窗口断开后服务自动退出。
+
+var live struct {
+	mu       sync.Mutex
+	n        int
+	ever     bool
+	lastSeen time.Time
+	started  time.Time
+}
+
+func liveServe(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		sendText(w, 500, "streaming unsupported")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(200)
+	flusher.Flush()
+
+	live.mu.Lock()
+	live.n++
+	live.ever = true
+	live.lastSeen = time.Now()
+	live.mu.Unlock()
+	defer func() {
+		live.mu.Lock()
+		live.n--
+		if live.n == 0 {
+			live.lastSeen = time.Now()
+		}
+		live.mu.Unlock()
+	}()
+
+	// 周期写注释行保活:连接死亡时写失败 -> 本协程退出 -> 计数减一
+	tick := time.NewTicker(10 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-tick.C:
+			if _, err := w.Write([]byte(": keepalive\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// startLivenessWatchdog 存活看门狗:窗口全关(或从未打开)-> 优雅退出。
+func startLivenessWatchdog() {
+	live.mu.Lock()
+	live.started = time.Now()
+	live.mu.Unlock()
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			live.mu.Lock()
+			n, ever := live.n, live.ever
+			idle := time.Since(live.lastSeen)
+			age := time.Since(live.started)
+			live.mu.Unlock()
+
+			if n > 0 {
+				continue
+			}
+			if !ever && age < 60*time.Second {
+				continue // 尚无窗口连上:留 60s 给 Edge 首次弹窗
+			}
+			if loginBusy() || refreshRunning() {
+				continue // 登录/刷新进行中:等它干完再退
+			}
+			if idle > 20*time.Second {
+				logger.Printf(">> 所有速查窗口已关闭,服务自动退出")
+				os.Exit(0)
+			}
+		}
+	}()
 }
 
 func refreshRunning() bool {

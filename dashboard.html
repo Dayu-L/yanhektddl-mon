@@ -481,6 +481,10 @@ refreshBtn.addEventListener("click", async () => {
   refreshBtn.textContent = "刷新数据";
 });
 
+// 窗口存活探测:服务凭所有窗口的这条长连接判断"还有人在用",
+// 全部窗口关闭后约 20 秒自动退出(无需任务管理器)
+new EventSource('/api/live');
+
 if (EMBEDDED) { DATA = EMBEDDED; render(); }
 load();
 </script>

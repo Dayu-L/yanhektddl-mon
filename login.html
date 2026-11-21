@@ -89,6 +89,8 @@
 </div>
 
 <script>
+// 窗口存活探测:关闭窗口 = 退出程序(服务自动收尾)
+new EventSource('/api/live');
 "use strict";
 const btn = document.getElementById("start");
 const statusEl = document.getElementById("status");

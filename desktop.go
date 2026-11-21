@@ -56,6 +56,8 @@ func desktopMode() {
 		logger.Printf(">> 8765 被其他程序占用,已改用端口 %d", port)
 	}
 
+	startLivenessWatchdog() // 窗口全关后服务自动退出(见 server.go)
+
 	srv := &http.Server{Handler: newMux()}
 	go func() {
 		if err := srv.Serve(ln); err != nil {
@@ -72,6 +74,19 @@ func desktopMode() {
 
 	// 常驻服务:直到进程被结束
 	select {}
+}
+
+// postQuit 通知 8765-8769 上的本程序服务优雅退出(--quit)
+func postQuit() bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	for port := portFirst; port <= portLast; port++ {
+		resp, err := client.Post(fmt.Sprintf("http://127.0.0.1:%d/api/quit", port), "", nil)
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+	}
+	return false
 }
 
 func listenAvailable() (net.Listener, int) {

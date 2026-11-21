@@ -53,6 +53,7 @@ func main() {
 	installFlag := flag.Bool("install-task", false, "注册每天 9:00 巡检计划任务")
 	uninstallFlag := flag.Bool("uninstall-task", false, "删除巡检计划任务")
 	showVersion := flag.Bool("version", false, "显示版本号")
+	quitFlag := flag.Bool("quit", false, "通知运行中的桌面服务退出")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "延河课堂/乐学 DDL 监控(无参数 = 桌面模式:本地服务 + 速查窗口)")
 		flag.PrintDefaults()
@@ -63,6 +64,17 @@ func main() {
 	if *showVersion {
 		utf8Console()
 		fmt.Printf("延河课堂 DDL v%s\n", version)
+		return
+	}
+
+	// ---- 退出运行中的服务 ----
+	if *quitFlag {
+		utf8Console()
+		if !postQuit() {
+			fmt.Println("没有发现运行中的服务(8765-8769 均无响应)")
+			os.Exit(1)
+		}
+		fmt.Println("已通知服务退出")
 		return
 	}
 
