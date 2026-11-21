@@ -67,12 +67,13 @@
 | 参数 | 说明 |
 |---|---|
 | (无参数) | 桌面模式:启动本地服务 + 打开速查窗口 |
+| `--fetch` | 单次抓取并生成报告(可配合下列参数) |
 | `--days N` | 「临期」阈值天数,默认 3 |
 | `--watch N` | 每 N 分钟自动巡检一次(可 `Ctrl+C` 停止) |
 | `--notify` | 发现临期/漏交任务时弹出 Windows 通知 |
 | `--visible` | 显示浏览器窗口,便于排查登录/抓取问题 |
 | `--from-json [路径]` | 不联网,直接用 `ddl_data.json`(或指定快照)生成报告 |
-| `--install-task` | 注册每天 9:00 的计划任务(巡检 + 通知) |
+| `--install-task` | 注册每天 9:00 的计划任务(内部以 `--fetch --days 3 --notify` 巡检) |
 | `--uninstall-task` | 删除该计划任务 |
 
 ## 常见问题
@@ -155,10 +156,10 @@ yanhektddl-mon/
 go build -trimpath -ldflags "-s -w" -o yanhektddl.exe .
 
 # 直接抓取一次,生成 ddl_report.md / ddl_report.csv
-./yanhektddl.exe
+./yanhektddl.exe --fetch
 
 # 需要观察浏览器行为时(显示 Edge 窗口)
-./yanhektddl.exe --visible
+./yanhektddl.exe --fetch --visible
 
 # 直接用已有快照重新生成报告,不打开浏览器
 ./yanhektddl.exe --from-json
