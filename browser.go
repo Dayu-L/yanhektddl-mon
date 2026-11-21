@@ -82,7 +82,10 @@ func tryOpenBrowser(visible bool) (*browserSession, error) {
 		chromedp.UserDataDir(profileDir),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("no-default-browser-check", true),
-		echdpFlagAntiAutomation(),
+		// 注意:不要加 --disable-blink-features=AutomationControlled 之类的
+		// “反检测”标志:Edge 会弹“不受支持的命令行标志”警告条,且该标志
+		// 在杀软眼里是恶意软件常用特征。抓取走的是已登录会话内的普通
+		// fetch,平台并不检查 navigator.webdriver,无需伪装。
 	)
 	if visible {
 		// 移除 headless / enable-automation 等,窗口行为与手动打开一致
@@ -101,10 +104,6 @@ func tryOpenBrowser(visible bool) (*browserSession, error) {
 	}
 	return &browserSession{allocCtx: alloc, cancelAlloc: cancelAlloc,
 		tab: tab, cancelTab: cancelTab}, nil
-}
-
-func echdpFlagAntiAutomation() chromedp.ExecAllocatorOption {
-	return chromedp.Flag("disable-blink-features", "AutomationControlled")
 }
 
 func (s *browserSession) close() {
