@@ -1,6 +1,6 @@
 # 构建 Windows 安装包(dist\yanhektddl-setup-<版本>.exe)
 # 用法:pwsh build-installer.ps1 [-Version 1.0.0]
-param([string]$Version = "1.0.0")
+param([string]$Version = "0.2.0")
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -29,7 +29,7 @@ if (-not $iscc) {
 # 2) 构建 Go 主程序
 New-Item -ItemType Directory -Force -Path (Join-Path $root "build") | Out-Null
 Write-Host ">> go build yanhektddl.exe" -ForegroundColor Cyan
-go build -trimpath -ldflags "-s -w" -o (Join-Path $root "build\yanhektddl.exe") .
+go build -trimpath -ldflags "-s -w -X main.version=$Version" -o (Join-Path $root "build\yanhektddl.exe") .
 if ($LASTEXITCODE -ne 0) { throw "go build 失败" }
 
 # 3) 编译安装包

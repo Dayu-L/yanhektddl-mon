@@ -14,6 +14,10 @@ import (
 //go:embed dashboard.html
 var dashboardHTML string
 
+// 版本号:默认值与 installer.iss/build-installer.ps1 保持一致,
+// 官方构建经 -ldflags "-X main.version=<版本>" 注入
+var version = "0.2.0"
+
 // preprocessArgs 把裸的 --from-json 补成 --from-json=(即“使用默认快照路径”),
 // 以保持与旧版 `--from-json [路径]` 兼容。
 func preprocessArgs(args []string) []string {
@@ -48,11 +52,19 @@ func main() {
 	fromJSON := flag.String("from-json", "", "不联网,用数据快照生成报告(可选指定路径)")
 	installFlag := flag.Bool("install-task", false, "注册每天 9:00 巡检计划任务")
 	uninstallFlag := flag.Bool("uninstall-task", false, "删除巡检计划任务")
+	showVersion := flag.Bool("version", false, "显示版本号")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "延河课堂/乐学 DDL 监控(无参数 = 桌面模式:本地服务 + 速查窗口)")
 		flag.PrintDefaults()
 	}
 	flag.CommandLine.Parse(preprocessArgs(os.Args[1:]))
+
+	// ---- 显示版本 ----
+	if *showVersion {
+		utf8Console()
+		fmt.Printf("延河课堂 DDL v%s\n", version)
+		return
+	}
 
 	// ---- 卸载计划任务 ----
 	if *uninstallFlag {

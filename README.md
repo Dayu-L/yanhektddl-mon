@@ -199,7 +199,7 @@ go test -run TestBrowserSmoke -v .
 
 # 构建 Windows 安装包(需 Inno Setup,缺失时自动经 winget 安装)
 ./build-installer.ps1            # 产出 dist/yanhektddl-setup-<版本>.exe
-./build-installer.ps1 -Version 1.1.0
+./build-installer.ps1 -Version 0.3.0
 ```
 
 开发期也可以 `go run .` 代替构建(数据目录会自动落到工作目录)。
