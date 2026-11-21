@@ -64,11 +64,8 @@ func desktopMode() {
 	}()
 	time.Sleep(300 * time.Millisecond)
 
-	// 首次运行还没有数据 -> 后台抓取(必要时自动弹登录窗口)
-	if _, err := loadSnapshot(); err != nil {
-		go runRefresh(3)
-	}
-
+	// 首次运行还没有数据 -> 窗口会自动落到 /login 登录向导页,
+	// 由用户点[开始登录]再进入可见浏览器流程(不自动弹窗,避免吓到新手)
 	openWindow(port)
 	logger.Printf(">> 延河课堂 DDL 服务已启动:http://127.0.0.1:%d/", port)
 	logger.Printf(">> 关闭进程后,双击 exe 可随时重新启动(进程名 %s)", exeName)

@@ -1,12 +1,19 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
+
+// app.ico 打入 exe:浏览器窗口图标(favicon)
+//
+//go:embed app.ico
+var faviconIco []byte
 
 // ---------------------------------------------------------------- 速查页数据
 // 把 ddl_data.json 变成 dashboard.html 使用的 JSON(对应 python snapshot())
@@ -96,8 +103,9 @@ func marshalNoEscape(v interface{}) ([]byte, error) {
 // ---------------------------------------------------------------- HTTP 服务
 
 var refreshState struct {
-	mu      sync.Mutex
-	running bool
+	mu            sync.Mutex
+	running       bool
+	loginRequired bool
 }
 
 func runRefresh(days int) {
@@ -118,8 +126,10 @@ func runRefresh(days int) {
 	snap, err := collectSnapshot(days, false)
 	if err != nil {
 		logger.Printf("[刷新] 抓取失败:%v", err)
+		setLoginRequired(errors.Is(err, errNotLoggedIn) || strings.Contains(err.Error(), "登录"))
 		return
 	}
+	setLoginRequired(false)
 	submitted := snap.SubmittedExams
 	if submitted == nil {
 		submitted = map[string][]interface{}{}
@@ -148,6 +158,11 @@ func newMux() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/", "/index.html", "/dashboard.html":
+			if _, err := loadSnapshot(); err != nil {
+				// 首次运行还没有数据 -> 只提供登录指引的向导页
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
 			page, err := renderPage()
 			if err != nil {
 				sendText(w, 500, err.Error())
@@ -169,7 +184,31 @@ func newMux() http.Handler {
 		sendJSON(w, 200, data)
 	})
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
-		sendJSON(w, 200, map[string]bool{"running": refreshRunning()})
+		sendJSON(w, 200, map[string]bool{
+			"running":        refreshRunning(),
+			"login_required": loginRequired(),
+		})
+	})
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.Header().Set("Cache-Control", "max-age=86400")
+		w.Write(faviconIco)
+	})
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write([]byte(loginHTML))
+	})
+	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			sendText(w, 404, "not found")
+			return
+		}
+		go runLogin()
+		sendJSON(w, 200, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("/api/login-status", func(w http.ResponseWriter, r *http.Request) {
+		sendJSON(w, 200, loginSnapshot())
 	})
 	mux.HandleFunc("/api/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -186,4 +225,16 @@ func refreshRunning() bool {
 	refreshState.mu.Lock()
 	defer refreshState.mu.Unlock()
 	return refreshState.running
+}
+
+func setLoginRequired(v bool) {
+	refreshState.mu.Lock()
+	refreshState.loginRequired = v
+	refreshState.mu.Unlock()
+}
+
+func loginRequired() bool {
+	refreshState.mu.Lock()
+	defer refreshState.mu.Unlock()
+	return refreshState.loginRequired
 }

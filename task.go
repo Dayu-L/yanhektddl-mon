@@ -22,6 +22,11 @@ func installTask() error {
 	return nil
 }
 
+// taskExists 检查巡检计划任务是否已注册
+func taskExists() bool {
+	return exec.Command("schtasks", "/Query", "/TN", taskName).Run() == nil
+}
+
 // uninstallTask 删除计划任务
 func uninstallTask() error {
 	out, err := exec.Command("schtasks", "/Delete", "/F", "/TN", taskName).CombinedOutput()

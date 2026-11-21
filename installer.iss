@@ -9,9 +9,9 @@
 ;   - 卸载后保留登录数据与报告,由用户确认后手动删除(隐私自决)
 
 #define MyAppName "延河课堂 DDL"
-; 版本号可由 build-installer.ps1 经 /D 传入,缺省 0.2.0
+; 版本号可由 build-installer.ps1 经 /D 传入,缺省 0.3.0
 #ifndef MyAppVersion
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.3.0"
 #endif
 #define MyAppPublisher "Dayu-L"
 #define MyAppExeName "yanhektddl.exe"
@@ -32,9 +32,11 @@ Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=LICENSE
+SetupIconFile=app.ico
+UninstallDisplayIcon={app}\app.ico
 
 [Languages]
-Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinese"; MessagesFile: "ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; Flags: checkedonce
@@ -42,10 +44,11 @@ Name: "dailytask"; Description: "开启每天 9:00 自动巡检提醒(&M)"; Flag
 
 [Files]
 Source: "build\yanhektddl.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"; Tasks: desktopicon
 
 [Run]
 ; 注册每日巡检(静默执行,不弹黑窗)

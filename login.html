@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录延河课堂 · 延河课堂 DDL</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --ground: #f2f4f7; --surface: #ffffff; --border: #e6e6e6;
+    --text: #0a0a0a; --muted: #5f6368; --faint: #6b6b6b;
+    --blue: #1d5fbf; --primary: #141414;
+    --ok-bg: #dcfae5; --ok-ink: #04250e;
+    --err-bg: #ffedea; --err-ink: #831c1e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    background: var(--ground); color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 560px; max-width: 100%;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 36px 40px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .brand img { width: 34px; height: 34px; }
+  .brand .name { font-size: 17px; font-weight: 700; }
+  h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 14px; line-height: 1.7; margin-top: 8px; }
+  .steps { margin-top: 24px; display: grid; gap: 12px; }
+  .step { display: flex; gap: 12px; align-items: flex-start; }
+  .no {
+    flex: none; width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid #d0d6de; color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .step .t1 { font-size: 14px; font-weight: 600; line-height: 26px; }
+  .step .t2 { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .btn {
+    margin-top: 28px; width: 100%; height: 44px;
+    background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; font-size: 15px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .btn:hover { background: #2e2e2e; }
+  .btn:disabled { background: #9aa1aa; cursor: default; }
+  .status {
+    margin-top: 18px; font-size: 13px; line-height: 1.7;
+    padding: 12px 14px; border-radius: 8px; display: none;
+  }
+  .status.info { display: block; background: #eef4fc; color: #1d3f73; }
+  .status.ok { display: block; background: var(--ok-bg); color: var(--ok-ink); }
+  .status.err { display: block; background: var(--err-bg); color: var(--err-ink); }
+  .spinner {
+    display: inline-block; width: 12px; height: 12px; margin-right: 8px;
+    border: 2px solid #b9cdec; border-top-color: var(--blue);
+    border-radius: 50%; animation: rot .8s linear infinite;
+    vertical-align: -1px;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .foot { margin-top: 22px; font-size: 12px; color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">
+    <img src="/favicon.ico" alt="">
+    <div class="name">延河课堂 <span style="color:#1d5fbf">DDL</span></div>
+  </div>
+
+  <h1>登录延河课堂</h1>
+  <p class="sub" id="subTitle">首次使用需要登录一次你的账号。登录信息只保存在本机,不会上传。</p>
+
+  <div class="steps" id="steps">
+    <div class="step"><div class="no">1</div><div><div class="t1">点击下方「开始登录」</div><div class="t2">会自动弹出一个独立的 Edge 窗口</div></div></div>
+    <div class="step"><div class="no">2</div><div><div class="t1">在窗口里输入账号、密码、图片验证码</div><div class="t2">就是学校平台(延河课堂)的登录方式</div></div></div>
+    <div class="step"><div class="no">3</div><div><div class="t1">不用做别的,等它自动完成</div><div class="t2">登录成功后自动抓取课程与作业,约 1-2 分钟</div></div></div>
+  </div>
+
+  <button class="btn" id="start">开始登录</button>
+  <div class="status" id="status"></div>
+
+  <div class="foot">会话保存在本机;账号密码只输入到学校平台的登录页,本程序不会收集。</div>
+</div>
+
+<script>
+"use strict";
+const btn = document.getElementById("start");
+const statusEl = document.getElementById("status");
+const subTitle = document.getElementById("subTitle");
+
+if (location.search.indexOf("from=banner") >= 0) {
+  subTitle.textContent = "登录状态已失效,请重新登录一次。数据仍然都保存在本机,不会上传。";
+}
+
+function setStatus(text, cls) {
+  statusEl.innerHTML = text;
+  statusEl.className = "status " + (cls || "");
+}
+
+btn.addEventListener("click", startLogin);
+
+async function startLogin() {
+  btn.disabled = true;
+  btn.textContent = "正在打开浏览器…";
+  setStatus('<span class="spinner"></span>正在启动登录窗口,请稍候…', "info");
+  try {
+    await fetch("/api/login", { method: "POST" });
+  } catch (e) {
+    setStatus("✗ 无法连接本地服务,请关闭本窗口后重新打开程序。", "err");
+    btn.disabled = false; btn.textContent = "重试";
+    return;
+  }
+  poll();
+}
+
+function poll() {
+  const timer = setInterval(async () => {
+    let st;
+    try {
+      st = await fetch("/api/login-status", { cache: "no-store" }).then(r => r.json());
+    } catch (e) { return; }
+    if (st.running) {
+      btn.textContent = "等待登录完成…";
+      setStatus('<span class="spinner"></span>正在等待登录 —— 请在弹出的 Edge 窗口里完成登录(含验证码)。', "info");
+      return;
+    }
+    clearInterval(timer);
+    if (st.done) {
+      setStatus("✓ 登录成功!已抓取到 <b>" + st.courses + "</b> 门课程、<b>" + st.items + "</b> 项任务。", "ok");
+      btn.textContent = "打开速查窗口 →";
+      btn.disabled = false;
+      btn.addEventListener("click", () => { location.href = "/"; }, { once: true });
+    } else {
+      setStatus("✗ 没有完成登录:" + (st.error || "未知原因") +
+                "<br>常见原因:验证码输错、网络中断、浏览器窗口被关闭。可以再试一次。", "err");
+      btn.textContent = "重试";
+      btn.disabled = false;
+    }
+  }, 1500);
+}
+</script>
+</body>
+</html>

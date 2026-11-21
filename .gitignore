@@ -40,6 +40,10 @@ desktop.ini
 # ---------------------------------------------------------------
 # Go 单文件主程序(Release 发布,不入库)
 yanhektddl.exe
+# go build ./... 默认产物(模块名)
+yanhektddl-mon.exe
+# 由 build-installer.ps1 从 app.ico 自动生成
+rsrc.syso
 build/
 dist/
 *.zip
