@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -240,7 +239,7 @@ func newMux(port int) http.Handler {
 		logger.Printf(">> 收到退出请求,服务即将退出")
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			os.Exit(0)
+			shutdownAndExit()
 		}()
 	})
 	return mux
@@ -325,7 +324,7 @@ func startLivenessWatchdog() {
 			}
 			if idle > 20*time.Second {
 				logger.Printf(">> 所有速查窗口已关闭,服务自动退出")
-				os.Exit(0)
+				shutdownAndExit()
 			}
 		}
 	}()

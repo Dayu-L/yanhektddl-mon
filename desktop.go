@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -48,6 +49,20 @@ func openWindow(port int) {
 	}
 	_ = exec.Command("cmd", "/c", "start", url).Start()
 	logger.Printf(">> 已用默认浏览器打开速查页")
+}
+
+// shutdownAndExit 统一退出路径:先把速查窗口一并关掉,再退出进程。
+//
+// 不关窗口的话,托盘「退出」后屏幕上会留一个页面点不动的 Edge 窗口
+// (背后服务已死)。注意窗口是复用用户日常 Edge 进程的,所以只能
+// 按窗口发 WM_CLOSE,不能杀进程。
+func shutdownAndExit() {
+	if n := closeAppWindows(appWindowTitles...); n > 0 {
+		logger.Printf(">> 已关闭 %d 个速查窗口", n)
+		time.Sleep(400 * time.Millisecond) // 给 WM_CLOSE 一点送达/关闭时间
+	}
+	logger.Printf(">> 进程退出")
+	os.Exit(0)
 }
 
 // probeOurs 8765 上运行的是不是我们自己的服务(防止把别的程序误认成自己)

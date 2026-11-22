@@ -2,7 +2,6 @@ package main
 
 import (
 	_ "embed"
-	"os"
 	"time"
 
 	"github.com/energye/systray"
@@ -57,7 +56,7 @@ func runTray(onOpen func()) {
 
 		logger.Printf(">> 托盘已就绪(右键菜单:打开窗口 / 退出)")
 	}, func() {
-		logger.Printf(">> 托盘已关闭,服务退出")
-		os.Exit(0)
+		logger.Printf(">> 托盘已关闭")
+		shutdownAndExit()
 	})
 }
