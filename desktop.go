@@ -56,8 +56,6 @@ func desktopMode() {
 		logger.Printf(">> 8765 被其他程序占用,已改用端口 %d", port)
 	}
 
-	startLivenessWatchdog() // 窗口全关后服务自动退出(见 server.go)
-
 	srv := &http.Server{Handler: newMux()}
 	go func() {
 		if err := srv.Serve(ln); err != nil {
@@ -70,10 +68,12 @@ func desktopMode() {
 	// 由用户点[开始登录]再进入可见浏览器流程(不自动弹窗,避免吓到新手)
 	openWindow(port)
 	logger.Printf(">> 延河课堂 DDL 服务已启动:http://127.0.0.1:%d/", port)
-	logger.Printf(">> 关闭进程后,双击 exe 可随时重新启动(进程名 %s)", exeName)
+	logger.Printf(">> 关闭速查窗口后服务仍在托盘运行;右键托盘图标可「退出」")
 
-	// 常驻服务:直到进程被结束
-	select {}
+	// 常驻托盘:右键菜单 打开窗口 / 退出。
+	// 关闭 Edge 窗口不再导致服务退出(托盘就是那个可见入口),
+	// 若托盘不可用则自动退回 watchdog 兜底(见 runTray)。
+	runTray(func() { openWindow(port) })
 }
 
 // postQuit 通知 8765-8769 上的本程序服务优雅退出(--quit)

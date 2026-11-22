@@ -44,6 +44,9 @@ func flagSet(name string) bool {
 }
 
 func main() {
+	// 尽早声明 DPI 感知:托盘右键菜单是原生窗口,晚于窗口创建再声明就无效了
+	enableHiDPI()
+
 	days := flag.Int("days", 3, "“临期”阈值天数(默认 3)")
 	watch := flag.Int("watch", 0, "循环监控:每 N 分钟重新抓取一次(Ctrl+C 停止)")
 	notifyFlag := flag.Bool("notify", false, "发现临期/漏交任务时弹 Windows 通知")
