@@ -7,7 +7,7 @@ import (
 
 // login.html 打入 exe:登录指引页(首次运行 / 登录失效时展示)
 //
-//go:embed login.html
+//go:embed web/login.html
 var loginHTML string
 
 // ---------------------------------------------------------------- 登录流程

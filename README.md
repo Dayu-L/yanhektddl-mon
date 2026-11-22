@@ -58,7 +58,7 @@
 
 建议再做两件事(均可选):
 
-- 运行 **`创建桌面快捷方式.bat`**,以后双击桌面图标即可打开速查窗口
+- 运行 **`scripts\创建桌面快捷方式.bat`**,以后双击桌面图标即可打开速查窗口
 - 命令行运行一次 `yanhektddl.exe --install-task`,开启每天 9:00 自动巡检提醒
   (对应卸载:`--uninstall-task`)
 
@@ -139,7 +139,7 @@ Defender/SmartScreen 启发式(与是否用安装包无关);Azure Trusted Signin
 「是否保留用户数据」——选「是」保留登录会话与报告(推荐,便于重装免登录),
 选「否」一并清除,不留任何残留。静默卸载(`/VERYSILENT`)默认保留数据。
 
-**便携版**:双击程序文件夹里的 **`卸载.bat`**,按提示输入 `y` 回车即可 →
+**便携版**:双击程序文件夹里 `scripts\卸载.bat`,按提示输入 `y` 回车即可 →
 自动删除桌面图标、巡检任务、运行中的服务和整个文件夹。
 
 手动卸载(等价操作):
@@ -155,16 +155,22 @@ Defender/SmartScreen 启发式(与是否用安装包无关);Azure Trusted Signin
 
 ```
 yanhektddl-mon/
-├─ main.go / browser.go / report.go / server.go / desktop.go / notify.go / task.go / js.go …
-│                        # Go 实现:chromedp 驱动系统 Edge 完成抓取
-├─ dashboard.html        # 速查窗口前端页面(go:embed 打入 exe,无需单独分发)
-├─ installer.iss         # Inno Setup 安装包脚本(免管理员、标准卸载入口)
-├─ build-installer.ps1   # 一键构建安装包 → dist/yanhektddl-setup-<版本>.exe
-├─ 创建桌面快捷方式.bat    # (可选)为便携版 exe 建桌面图标
-├─ 卸载.bat               # 便携版卸载:停服务、删图标、删计划任务、删目录
-├─ legacy_python/         # 旧版 Python/Playwright 实现及各安装向导,仅存档
-├─ README.md              # 本文件:使用手册 + 开发指引
-└─ LICENSE                # MIT
+├─ main.go                 # 入口:参数分发 + 页面嵌入(exe 内)
+├─ browser.go / js.go      # 抓取:chromedp 驱动系统 Edge,平台接口 JS 片段
+├─ report.go / types.go    # 数据模型、分组规则、Markdown/CSV 报告
+├─ server.go / desktop.go  # 本地 HTTP 服务、桌面模式、窗口开关
+├─ tray.go / login.go      # 系统托盘、登录向导
+├─ platform_windows.go     # Win32 适配层:控制台/DPI/单实例/窗口(纯 syscall,无 CGO)
+├─ platform_other.go       # 非 Windows 占位实现
+├─ assets/                 # app.ico(托盘与 exe 图标)、app.png
+├─ web/                    # dashboard.html(速查页)、login.html(登录向导)
+├─ installer/              # installer.iss、中文语言包、build-installer.ps1
+├─ scripts/                # 创建桌面快捷方式.bat、卸载.bat(便携版)
+├─ tools/                  # make_icon.py(生成应用图标)
+├─ legacy_python/          # 旧版 Python/Playwright 实现及各安装向导,仅存档
+├─ build/  dist/           # 构建中间产物 / 安装包产物(均已忽略)
+├─ README.md               # 本文件:使用手册 + 开发指引
+└─ LICENSE                 # MIT
 ```
 
 程序运行后会在同目录生成以下文件(均已加入 `.gitignore`,不要提交):
@@ -178,7 +184,7 @@ yanhektddl-mon/
 
 ## 工作原理
 
-1. **抓取**:exe 通过 CDP(rod 库)启动一个独立的持久化 Edge 会话,
+1. **抓取**:exe 通过 CDP(chromedp 库)启动一个独立的持久化 Edge 会话,
    会话保存在 `browser_profile/`,不影响日常使用的浏览器。
 2. 在已登录的会话内调用平台官方接口:
    - 延河课堂课程列表 → 课程 `zhiyuan_id` 与课程关闭时间
@@ -213,8 +219,8 @@ go build -trimpath -ldflags "-s -w" -o yanhektddl.exe .
 go test -run TestBrowserSmoke -v .
 
 # 构建 Windows 安装包(需 Inno Setup,缺失时自动经 winget 安装)
-./build-installer.ps1            # 产出 dist/yanhektddl-setup-<版本>.exe
-./build-installer.ps1 -Version 0.3.1
+./installer/build-installer.ps1            # 产出 dist/yanhektddl-setup-<版本>.exe
+./installer/build-installer.ps1 -Version 0.3.1
 ```
 
 开发期也可以 `go run .` 代替构建(数据目录会自动落到工作目录)。

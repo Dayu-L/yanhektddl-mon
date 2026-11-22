@@ -12,7 +12,7 @@ import (
 
 // app.ico 打入 exe:浏览器窗口图标(favicon)
 //
-//go:embed app.ico
+//go:embed assets/app.ico
 var faviconIco []byte
 
 // ---------------------------------------------------------------- 速查页数据

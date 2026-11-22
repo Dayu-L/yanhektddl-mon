@@ -26,13 +26,13 @@ DefaultDirName={localappdata}\Programs\YanhektDDL
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 WizardStyle=modern
-OutputDir=dist
+OutputDir=..\dist
 OutputBaseFilename=yanhektddl-setup-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
-LicenseFile=LICENSE
-SetupIconFile=app.ico
+LicenseFile=..\LICENSE
+SetupIconFile=..\assets\app.ico
 UninstallDisplayIcon={app}\app.ico
 
 [Languages]
@@ -43,8 +43,8 @@ Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; Flags: checked
 Name: "dailytask"; Description: "开启每天 9:00 自动巡检提醒(&M)"; Flags: checkedonce
 
 [Files]
-Source: "build\yanhektddl.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build\yanhektddl.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\app.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"

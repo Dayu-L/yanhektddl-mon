@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """生成 app.ico:白底圆角方块 + 品牌蓝时钟(与应用内标记一致),多尺寸"""
 from PIL import Image, ImageDraw
+import os
 
 BLUE = (29, 95, 191, 255)      # #1d5fbf
 WHITE = (255, 255, 255, 255)
@@ -33,10 +34,15 @@ def draw_icon(size, ss=8):
 
     return img.resize((size, size), Image.LANCZOS)
 
+# 输出到仓库的 assets/ 目录(脚本位于 tools/,取其父目录),不写死绝对路径
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ASSETS = os.path.join(ROOT, "assets")
+os.makedirs(ASSETS, exist_ok=True)
+
 sizes = [16, 24, 32, 48, 64, 128, 256]
 imgs = [draw_icon(s) for s in sizes]
-imgs[-1].save(r"C:\Users\llyyt\Desktop\项目文件\yanhektddl-mon\app.ico",
-              sizes=[(s, s) for s in sizes])
+ico_path = os.path.join(ASSETS, "app.ico")
+imgs[-1].save(ico_path, sizes=[(s, s) for s in sizes])
 # 另存 256 PNG 供各页面 favicon/预览
-imgs[-1].save(r"C:\Users\llyyt\Desktop\项目文件\yanhektddl-mon\app.png")
-print("app.ico 已生成:", sizes)
+imgs[-1].save(os.path.join(ASSETS, "app.png"))
+print("app.ico 已生成:", ico_path, sizes)

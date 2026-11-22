@@ -38,11 +38,10 @@ desktop.ini
 # ---------------------------------------------------------------
 # 构建与打包产物
 # ---------------------------------------------------------------
-# Go 单文件主程序(Release 发布,不入库)
-yanhektddl.exe
-# go build ./... 默认产物(模块名)
-yanhektddl-mon.exe
-# 由 build-installer.ps1 从 app.ico 自动生成
+# Go 构建产物(Release 发布,不入库):根目录所有 exe/测试文件
+/*.exe
+*.test
+# 由 installer/build-installer.ps1 从 assets/app.ico 自动生成
 rsrc.syso
 build/
 dist/

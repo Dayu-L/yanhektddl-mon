@@ -11,7 +11,7 @@ import (
 
 // dashboard.html 打入 exe,无需单独分发
 //
-//go:embed dashboard.html
+//go:embed web/dashboard.html
 var dashboardHTML string
 
 // 版本号:默认值与 installer.iss/build-installer.ps1 保持一致,

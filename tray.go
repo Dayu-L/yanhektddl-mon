@@ -9,7 +9,7 @@ import (
 
 // 托盘图标:复用安装包/exe 同一个 app.ico(34KB),嵌入后无需外部文件
 //
-//go:embed app.ico
+//go:embed assets/app.ico
 var trayIcon []byte
 
 // runTray 启动系统托盘并阻塞(桌面模式的主循环)。

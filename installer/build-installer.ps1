@@ -1,9 +1,10 @@
 # 构建 Windows 安装包(dist\yanhektddl-setup-<版本>.exe)
-# 用法:pwsh build-installer.ps1 [-Version 0.3.1]
+# 用法:pwsh installer\build-installer.ps1 [-Version 0.3.1]
 param([string]$Version = "0.3.1")
 
 $ErrorActionPreference = "Stop"
-$root = $PSScriptRoot
+# 脚本位于 installer\ 子目录,项目根目录是其父目录
+$root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 
 # 1) 找 ISCC(Inno Setup 编译器)
@@ -28,7 +29,7 @@ if (-not $iscc) {
 }
 
 # 2) 生成 exe 图标资源(rsrc -> rsrc.syso,go build 自动打入)
-$ico = Join-Path $root "app.ico"
+$ico = Join-Path $root "assets\app.ico"
 if (Test-Path $ico) {
     $rsrc = Join-Path $env:USERPROFILE "go\bin\rsrc.exe"
     if (-not (Test-Path $rsrc)) {
@@ -49,7 +50,7 @@ if ($LASTEXITCODE -ne 0) { throw "go build 失败" }
 
 # 4) 编译安装包
 Write-Host ">> ISCC installer.iss (v$Version)" -ForegroundColor Cyan
-& $iscc "/DMyAppVersion=$Version" (Join-Path $root "installer.iss") | Out-Null
+& $iscc "/DMyAppVersion=$Version" (Join-Path $PSScriptRoot "installer.iss") | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败" }
 
 $out = Join-Path $root "dist\yanhektddl-setup-$Version.exe"
