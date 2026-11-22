@@ -173,6 +173,10 @@ func desktopMode() {
 	// “最小化到托盘”则不退出,由托盘负责后续入口。
 	startLivenessWatchdog(false)
 
+	// 会话保温:常驻期间每 10 分钟轻量 ping 一次 /api/todos,
+	// 避免平台会话空闲过期后刷新/巡检弹登录窗
+	startKeepAlive()
+
 	// 常驻托盘:右键菜单 打开窗口 / 设置 / 退出。
 	// 若托盘不可用则自动退回 watchdog 兜底(见 runTray)。
 	runTray(func() { openWindow(port) }, func() { openSettingsWindow(port) })

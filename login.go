@@ -56,7 +56,11 @@ func runLogin() {
 	loginSt.mu.Unlock()
 
 	logger.Printf("[登录] 开始登录流程…")
+
+	// 与刷新/保温 ping 互斥:同一 profile 同时只能有一个浏览器
+	profileMu.Lock()
 	snap, err := collectSnapshotForLogin()
+	profileMu.Unlock()
 
 	loginSt.mu.Lock()
 	loginSt.running = false

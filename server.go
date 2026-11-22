@@ -116,6 +116,13 @@ func runRefresh(days int) {
 		refreshState.mu.Unlock()
 		return
 	}
+	// 登录向导占着浏览器(可见窗口等用户输入,可能长达 10 分钟):
+	// 直接拒绝,避免刷新排在 profile 锁后面白等
+	if loginBusy() {
+		refreshState.mu.Unlock()
+		logger.Printf("[刷新] 登录流程进行中,请等登录完成后再刷新")
+		return
+	}
 	refreshState.running = true
 	refreshState.mu.Unlock()
 	defer func() {
@@ -123,6 +130,11 @@ func runRefresh(days int) {
 		refreshState.running = false
 		refreshState.mu.Unlock()
 	}()
+
+	// 与登录向导/保温 ping 互斥:同一 profile 同时只能有一个浏览器
+	// (openBrowser 的清锁逻辑会杀掉并发的同 profile Edge)
+	profileMu.Lock()
+	defer profileMu.Unlock()
 
 	logger.Printf("[刷新] 开始后台抓取…")
 	snap, err := collectSnapshot(days, false, false)
@@ -382,8 +394,8 @@ func startLivenessWatchdog(forceExit bool) {
 			if !ever && age < 60*time.Second {
 				continue // 尚无窗口连上:留 60s 给 Edge 首次弹窗
 			}
-			if loginBusy() || refreshRunning() {
-				continue // 登录/刷新进行中:等它干完再退
+			if loginBusy() || refreshRunning() || keepAliveBusy.Load() {
+				continue // 登录/刷新/保温 ping 进行中:等它干完再退
 			}
 			if idle > 20*time.Second {
 				logger.Printf(">> 所有速查窗口已关闭,按设置退出服务")
