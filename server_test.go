@@ -79,11 +79,22 @@ func TestRenderPageIgnoreContract(t *testing.T) {
 		t.Fatalf("dashboard.html 不应再包含课程开放截止板块")
 	}
 
-	f, err := os.Create(filepath.Join(base, "ddl_data.json"))
+	// 快照文件与真实数据隔离:先备份,结束后恢复(不能直接删,否则会
+	// 破坏用户目录里真实的抓取结果)
+	dataPath := filepath.Join(base, "ddl_data.json")
+	oldData, err := os.ReadFile(dataPath)
+	hadData := err == nil
+	f, err := os.Create(dataPath)
 	if err != nil {
 		t.Skipf("无法写快照文件,跳过渲染测试:%v", err)
 	}
-	t.Cleanup(func() { os.Remove(f.Name()) })
+	t.Cleanup(func() {
+		if hadData {
+			os.WriteFile(dataPath, oldData, 0o644)
+		} else {
+			os.Remove(dataPath)
+		}
+	})
 	f.WriteString(`{"fetched_at":"2026-11-22T20:00:00+08:00","courses":[` +
 		`{"zyId":"zy1","title":"数据结构","endAt":0}],` +
 		`"items":[{"zy":"zy1","kind":"homework","id":7,"title":"作业一",` +
