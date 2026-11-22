@@ -75,6 +75,7 @@ func runLogin() {
 	loginSt.items = len(snap.Items)
 	loginSt.mu.Unlock()
 	logger.Printf("[登录] 成功:%d 门课 %d 条任务", len(snap.Courses), len(snap.Items))
+	setLoginRequired(false) // 会话已换新,清掉速查页的失效横幅
 
 	// 首次登录成功后按设置同步每日巡检任务(已存在则跳过)
 	syncAutoCheck()

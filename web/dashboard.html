@@ -61,6 +61,17 @@ a { color: inherit; }
 .stamp { color: var(--muted); font-size: 12px; }
 .stamp .num { color: var(--text); }
 
+/* ============ 登录失效横幅 ============ */
+.relogin {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 0 0 var(--gap); padding: 10px 14px;
+  background: var(--pill-negative-bg); color: var(--pill-negative-ink);
+  border: 1px solid #f2c8c4; border-radius: var(--radius-control);
+  font-size: 13px;
+}
+.relogin[hidden] { display: none; }
+.relogin a { color: inherit; font-weight: 600; text-decoration: underline; }
+
 /* ============ 控件 ============ */
 button { font: inherit; }
 .btn-primary {
@@ -240,6 +251,11 @@ button { font: inherit; }
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>刷新数据</button>
     </div>
   </header>
+
+  <div class="relogin" id="reloginBar" hidden>
+    登录状态已失效,新数据抓不下来了(本机已存数据不受影响)。
+    <a href="/login?from=banner">重新登录 →</a>
+  </div>
 
   <div class="grid">
     <main class="col-main" id="main"></main>
@@ -499,6 +515,7 @@ refreshBtn.addEventListener("click", async () => {
       if (!st.running) break;
     }
     await load();
+    checkLogin();
   } catch (e) {
     $("#finding").textContent = "刷新失败,请稍后点[刷新数据]重试。";
   }
@@ -509,6 +526,17 @@ refreshBtn.addEventListener("click", async () => {
 // 窗口存活探测:服务凭所有窗口的这条长连接判断"还有人在用";
 // 关闭后是否退出由设置页的「关闭窗口时」决定。
 new EventSource('/api/live');
+
+// 登录失效横幅:保温 ping / 刷新探明会话失效时提示重登。
+// 状态本身由服务端维护,这里每 5 分钟对一次(保温 ping 也是分钟级)
+async function checkLogin() {
+  try {
+    const st = await fetch("/api/status", { cache: "no-store" }).then(r => r.json());
+    document.getElementById("reloginBar").hidden = !st.login_required;
+  } catch (e) {}
+}
+checkLogin();
+setInterval(checkLogin, 5 * 60 * 1000);
 
 // 页脚展示当前自动巡检设置
 fetch('/api/settings', { cache: 'no-store' }).then(r => r.json()).then(s => {
