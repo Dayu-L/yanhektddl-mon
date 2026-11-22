@@ -50,6 +50,7 @@ func apiData() (map[string]interface{}, error) {
 			"missed":     []jrow{}, "urgent": []jrow{}, "week": []jrow{},
 			"later": []jrow{}, "unknown": []jrow{}, "done": []jrow{},
 			"ignored": []jrow{},
+			"course_count": 0, "item_count": 0,
 		}, nil
 	}
 	submitted := snap.SubmittedExams
@@ -67,6 +68,8 @@ func apiData() (map[string]interface{}, error) {
 		"unknown":    jrows(rep.Bucket.Unknown),
 		"done":       jrows(rep.Bucket.Done),
 		"ignored":    jrows(rep.Bucket.Ignored),
+		// 标题行概览用(最近截止等细节由 hero 卡承载,不重复)
+		"course_count": len(snap.Courses), "item_count": len(rep.Rows),
 	}, nil
 }
 

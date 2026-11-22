@@ -101,6 +101,9 @@ func TestRenderPageIgnoreContract(t *testing.T) {
 	if !strings.Contains(s, `"key":"zy1#7"`) {
 		t.Fatalf("行数据应包含忽略标记 key")
 	}
+	if !strings.Contains(s, `"course_count":1`) || !strings.Contains(s, `"item_count":1`) {
+		t.Fatalf("渲染数据应包含标题行概览计数")
+	}
 	if strings.Contains(s, `"closes"`) {
 		t.Fatalf("渲染数据不应再包含 closes")
 	}
