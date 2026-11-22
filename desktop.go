@@ -34,10 +34,23 @@ func probeOurs() bool {
 	return json.NewDecoder(resp.Body).Decode(&st) == nil
 }
 
-// desktopMode 双击 exe 的默认模式:本地服务 + Edge 速查窗口。
-// 重复启动时只新开窗口,不会起第二个服务。
+// desktopMode 双击 exe 的默认模式:本地服务 + 托盘 + Edge 速查窗口。
+// 严格单实例:已有实例在运行时,本进程只负责把已有窗口叫出来,然后退出。
 func desktopMode() {
-	// 是自家服务在跑:只开窗口
+	// 单实例互斥量(内核级原子,无端口探测的竞态)
+	if !acquireSingleInstance() {
+		logger.Printf(">> 已有实例在运行")
+		if wakeExisting() {
+			logger.Printf(">> 已打开运行中实例的窗口")
+			return
+		}
+		// 已有实例但叫不动(服务卡死等):提示用户从托盘退出后重试
+		msg := "延河课堂 DDL 已在运行(见系统托盘图标)。\n可从托盘右键「退出」后再重新启动。"
+		logger.Printf(">> %s", msg)
+		msgBox(msg, "延河课堂 DDL")
+		return
+	}
+	// 互斥量建失败时的兜底:仍是自家服务在跑则只开窗口
 	if probeOurs() {
 		openWindow(portFirst)
 		logger.Printf(">> 服务已在运行,已打开窗口")
@@ -56,7 +69,7 @@ func desktopMode() {
 		logger.Printf(">> 8765 被其他程序占用,已改用端口 %d", port)
 	}
 
-	srv := &http.Server{Handler: newMux()}
+	srv := &http.Server{Handler: newMux(port)}
 	go func() {
 		if err := srv.Serve(ln); err != nil {
 			logger.Printf(">> 服务异常退出:%v", err)
@@ -74,6 +87,20 @@ func desktopMode() {
 	// 关闭 Edge 窗口不再导致服务退出(托盘就是那个可见入口),
 	// 若托盘不可用则自动退回 watchdog 兜底(见 runTray)。
 	runTray(func() { openWindow(port) })
+}
+
+// wakeExisting 要求已运行的实例把窗口打开(第二个实例被拦下时用)。
+// 端口可能在 8765-8769 之间,逐个尝试。
+func wakeExisting() bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	for port := portFirst; port <= portLast; port++ {
+		resp, err := client.Post(fmt.Sprintf("http://127.0.0.1:%d/api/open", port), "", nil)
+		if err == nil {
+			resp.Body.Close()
+			return resp.StatusCode == http.StatusOK
+		}
+	}
+	return false
 }
 
 // postQuit 通知 8765-8769 上的本程序服务优雅退出(--quit)

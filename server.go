@@ -154,7 +154,7 @@ func sendText(w http.ResponseWriter, code int, s string) {
 	w.Write([]byte(s))
 }
 
-func newMux() http.Handler {
+func newMux(port int) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -221,6 +221,15 @@ func newMux() http.Handler {
 	})
 	// 窗口存活探测:页面 EventSource 长连接,全部断开 -> 服务自动退出
 	mux.HandleFunc("/api/live", liveServe)
+	// 叫出窗口:重复启动 exe 时,新进程请求已有实例打开速查窗口后自己退出
+	mux.HandleFunc("/api/open", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			sendText(w, 404, "not found")
+			return
+		}
+		go openWindow(port)
+		sendJSON(w, 200, map[string]bool{"ok": true})
+	})
 	// 手动退出(--quit):本机任意进程 POST 即可让服务优雅退出
 	mux.HandleFunc("/api/quit", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
