@@ -488,7 +488,7 @@ const refreshLabel = refreshBtn.innerHTML; // 含刷新图标
 refreshBtn.addEventListener("click", async () => {
   refreshBtn.disabled = true;
   refreshBtn.innerHTML = '<span class="spin" aria-hidden="true"></span>抓取中…';
-  $("#stampTime").textContent = "抓取中,约 1–2 分钟";
+  $("#stampTime").textContent = "抓取中…";
   try {
     await fetch("/api/refresh", { method: "POST" });
     for (;;) {
