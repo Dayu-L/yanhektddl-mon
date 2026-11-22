@@ -16,7 +16,7 @@ var dashboardHTML string
 
 // 版本号:默认值与 installer.iss/build-installer.ps1 保持一致,
 // 官方构建经 -ldflags "-X main.version=<版本>" 注入
-var version = "0.3.2"
+var version = "0.4.0"
 
 // preprocessArgs 把裸的 --from-json 补成 --from-json=(即“使用默认快照路径”),
 // 以保持与旧版 `--from-json [路径]` 兼容。
@@ -99,7 +99,7 @@ func main() {
 			fmt.Printf("注册失败:%v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("已注册每日 09:00 巡检任务(包含 Windows 通知提醒)")
+		fmt.Printf("已注册每天 %s 的巡检任务(包含 Windows 通知提醒)\n", currentSettings().CheckTime)
 		return
 	}
 

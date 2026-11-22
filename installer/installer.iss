@@ -9,9 +9,9 @@
 ;   - 卸载后保留登录数据与报告,由用户确认后手动删除(隐私自决)
 
 #define MyAppName "延河课堂 DDL"
-; 版本号可由 build-installer.ps1 经 /D 传入,缺省 0.3.2
+; 版本号可由 build-installer.ps1 经 /D 传入,缺省 0.4.0
 #ifndef MyAppVersion
-#define MyAppVersion "0.3.2"
+#define MyAppVersion "0.4.0"
 #endif
 #define MyAppPublisher "Dayu-L"
 #define MyAppExeName "yanhektddl.exe"

@@ -199,6 +199,32 @@ func newMux(port int) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write([]byte(loginHTML))
 	})
+	mux.HandleFunc("/settings", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write([]byte(settingsHTML))
+	})
+	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			sendJSON(w, 200, currentSettings())
+		case http.MethodPost:
+			var in Settings
+			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+				sendJSON(w, 400, map[string]string{"error": "请求格式错误"})
+				return
+			}
+			if err := saveSettings(in); err != nil {
+				sendJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+			logger.Printf("[设置] 已更新:自动检测=%v 时间=%s 关闭行为=%s",
+				in.AutoCheck, in.CheckTime, in.CloseBehavior)
+			sendJSON(w, 200, currentSettings())
+		default:
+			sendText(w, 405, "method not allowed")
+		}
+	})
 	mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			sendText(w, 404, "not found")
@@ -239,7 +265,7 @@ func newMux(port int) http.Handler {
 		logger.Printf(">> 收到退出请求,服务即将退出")
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			shutdownAndExit()
+			quitFromWatchdog()
 		}()
 	})
 	return mux
@@ -299,8 +325,12 @@ func liveServe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// startLivenessWatchdog 存活看门狗:窗口全关(或从未打开)-> 优雅退出。
-func startLivenessWatchdog() {
+// startLivenessWatchdog 存活看门狗。
+//
+// 普通模式(forceExit=false)只在设置选择“关闭即退出”时生效;选择
+// “最小化到托盘”时窗口全关也保持服务运行。forceExit=true 用于托盘
+// 创建失败的兜底:此时没有托盘入口,窗口全关必须退出。
+func startLivenessWatchdog(forceExit bool) {
 	live.mu.Lock()
 	live.started = time.Now()
 	live.mu.Unlock()
@@ -316,6 +346,9 @@ func startLivenessWatchdog() {
 			if n > 0 {
 				continue
 			}
+			if !forceExit && currentSettings().CloseBehavior != closeBehaviorExit {
+				continue // 最小化到托盘:窗口关闭不退出
+			}
 			if !ever && age < 60*time.Second {
 				continue // 尚无窗口连上:留 60s 给 Edge 首次弹窗
 			}
@@ -323,8 +356,8 @@ func startLivenessWatchdog() {
 				continue // 登录/刷新进行中:等它干完再退
 			}
 			if idle > 20*time.Second {
-				logger.Printf(">> 所有速查窗口已关闭,服务自动退出")
-				shutdownAndExit()
+				logger.Printf(">> 所有速查窗口已关闭,按设置退出服务")
+				quitFromWatchdog()
 			}
 		}
 	}()

@@ -25,11 +25,12 @@ const (
 
 // 运行期路径(基于 exe 所在目录;go run 时回退到工作目录)
 var (
-	base       string
-	profileDir string
-	dataJSON   string
-	reportMD   string
-	reportCSV  string
+	base         string
+	profileDir   string
+	dataJSON     string
+	settingsJSON string
+	reportMD     string
+	reportCSV    string
 
 	logger = log.New(os.Stdout, "", 0) // 桌面模式下会切换到 server.log
 )
@@ -38,6 +39,7 @@ func init() {
 	base = computeBaseDir()
 	profileDir = filepath.Join(base, "browser_profile")
 	dataJSON = filepath.Join(base, "ddl_data.json")
+	settingsJSON = filepath.Join(base, "settings.json")
 	reportMD = filepath.Join(base, "ddl_report.md")
 	reportCSV = filepath.Join(base, "ddl_report.csv")
 }

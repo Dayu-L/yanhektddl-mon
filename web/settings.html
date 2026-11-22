@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置 · 延河课堂 DDL</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --ground: #f2f4f7; --surface: #ffffff; --border: #e6e6e6;
+    --text: #0a0a0a; --muted: #5f6368; --faint: #6b6b6b;
+    --blue: #1d5fbf; --primary: #141414; --control: #d9dde3;
+    --ok-bg: #dcfae5; --ok-ink: #04250e;
+    --err-bg: #ffedea; --err-ink: #831c1e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    background: var(--ground); color: var(--text);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 32px 24px 48px;
+  }
+  .card {
+    width: 600px; max-width: 100%;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 32px 36px 28px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  .brand img { width: 32px; height: 32px; }
+  .brand .name { font-size: 16px; font-weight: 700; }
+  h1 { font-size: 23px; font-weight: 700; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; line-height: 1.7; margin-top: 7px; }
+
+  section { border-top: 1px solid var(--border); padding: 22px 0; }
+  section:first-of-type { border-top: none; padding-top: 24px; }
+  .row { display: flex; align-items: flex-start; gap: 16px; }
+  .row .grow { flex: 1; min-width: 0; }
+  .label { font-size: 15px; font-weight: 600; line-height: 22px; }
+  .hint { color: var(--muted); font-size: 12px; line-height: 1.65; margin-top: 3px; }
+
+  /* 开关 */
+  .switch { position: relative; flex: none; width: 46px; height: 26px; margin-top: 2px; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; inset: 0; border-radius: 999px;
+    background: #cfd4db; transition: background .18s; cursor: pointer;
+  }
+  .switch .slider::before {
+    content: ""; position: absolute; width: 20px; height: 20px;
+    left: 3px; top: 3px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .18s;
+  }
+  .switch input:checked + .slider { background: var(--blue); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+  .switch input:focus-visible + .slider { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  /* 时间 */
+  .timeRow {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 16px; padding: 12px 14px;
+    background: #f7f8fa; border: 1px solid var(--border); border-radius: 8px;
+    transition: opacity .18s;
+  }
+  .timeRow.off { opacity: .45; }
+  .timeRow label { font-size: 13px; font-weight: 600; }
+  input[type="time"] {
+    font: inherit; font-size: 14px; height: 34px; padding: 0 10px;
+    border: 1px solid var(--control); border-radius: 7px; background: #fff;
+    color: var(--text);
+  }
+  input[type="time"]:disabled { background: #f1f2f4; color: var(--faint); }
+  .timeRow .hint { margin: 0; }
+
+  /* 关闭行为 */
+  .choice {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin-top: 10px; padding: 13px 14px;
+    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .choice:hover { border-color: #c3c8d0; }
+  .choice:has(input:checked) { border-color: var(--blue); background: #f5f8fe; }
+  .choice input { margin-top: 3px; accent-color: var(--blue); flex: none; }
+  .choice b { display: block; font-size: 14px; font-weight: 600; }
+  .choice small { display: block; color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 2px; }
+
+  /* 底部 */
+  .btn {
+    margin-top: 6px; width: 100%; height: 44px;
+    background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; font-size: 15px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .btn:hover { background: #2e2e2e; }
+  .btn:disabled { background: #9aa1aa; cursor: default; }
+  .status {
+    margin-top: 14px; font-size: 13px; line-height: 1.7;
+    padding: 11px 14px; border-radius: 8px; display: none;
+  }
+  .status.ok { display: block; background: var(--ok-bg); color: var(--ok-ink); }
+  .status.err { display: block; background: var(--err-bg); color: var(--err-ink); }
+  .foot {
+    margin-top: 18px; display: flex; justify-content: space-between;
+    gap: 12px; font-size: 12px; color: var(--faint);
+  }
+  .foot a { color: var(--muted); text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">
+    <img src="/favicon.ico" alt="">
+    <div class="name">延河课堂 <span style="color:#1d5fbf">DDL</span></div>
+  </div>
+
+  <h1>设置</h1>
+  <p class="sub">调整自动检测与关闭窗口行为。设置只保存在本机，不会上传。</p>
+
+  <section>
+    <div class="row">
+      <div class="grow">
+        <div class="label">自动检测</div>
+        <div class="hint">每天自动抓取一次；发现临期或漏交任务时弹出 Windows 通知。</div>
+      </div>
+      <label class="switch" title="开启 / 关闭自动检测">
+        <input type="checkbox" id="autoCheck">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="timeRow" id="timeRow">
+      <label for="checkTime">检测时间</label>
+      <input type="time" id="checkTime" value="09:00" step="60">
+      <span class="hint">由 Windows 计划任务执行，程序没打开也会按时检测。</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">关闭窗口时</div>
+    <div class="hint">指的是关闭最后一个速查 / 登录 / 设置窗口后的行为。</div>
+
+    <label class="choice">
+      <input type="radio" name="closeBehavior" value="tray">
+      <span><b>最小化到托盘</b><small>服务继续在后台运行，点托盘图标可随时重新打开窗口。</small></span>
+    </label>
+    <label class="choice">
+      <input type="radio" name="closeBehavior" value="exit">
+      <span><b>退出程序</b><small>窗口全部关闭约 20 秒后退出，托盘图标消失，后台不再运行。</small></span>
+    </label>
+  </section>
+
+  <button class="btn" id="save" type="button">保存设置</button>
+  <div class="status" id="status"></div>
+
+  <div class="foot">
+    <a href="/">← 返回速查窗口</a>
+    <span>设置保存在程序目录的 settings.json</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+// 窗口存活探测:设置页也算一个窗口,关闭它不会误触发“全部关闭”
+new EventSource('/api/live');
+
+const autoEl = document.getElementById('autoCheck');
+const timeEl = document.getElementById('checkTime');
+const timeRow = document.getElementById('timeRow');
+const saveBtn = document.getElementById('save');
+const statusEl = document.getElementById('status');
+
+function showStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className = 'status ' + (cls || '');
+}
+
+function syncTimeState() {
+  timeEl.disabled = !autoEl.checked;
+  timeRow.classList.toggle('off', !autoEl.checked);
+}
+
+autoEl.addEventListener('change', syncTimeState);
+
+async function load() {
+  try {
+    const s = await fetch('/api/settings', { cache: 'no-store' }).then(r => r.json());
+    autoEl.checked = !!s.auto_check;
+    if (s.check_time) timeEl.value = s.check_time;
+    const radio = document.querySelector('input[name="closeBehavior"][value="' +
+      (s.close_behavior === 'exit' ? 'exit' : 'tray') + '"]');
+    if (radio) radio.checked = true;
+  } catch (e) {
+    showStatus('读取设置失败，请关闭窗口后重新打开程序。', 'err');
+  }
+  syncTimeState();
+}
+
+saveBtn.addEventListener('click', async () => {
+  const radio = document.querySelector('input[name="closeBehavior"]:checked');
+  const body = {
+    auto_check: autoEl.checked,
+    check_time: timeEl.value || '09:00',
+    close_behavior: radio ? radio.value : 'tray'
+  };
+  saveBtn.disabled = true;
+  saveBtn.textContent = '正在保存…';
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showStatus('✗ ' + (data.error || '保存失败'), 'err');
+    } else {
+      showStatus('✓ 设置已保存' + (data.auto_check
+        ? '，每天 ' + data.check_time + ' 自动检测'
+        : '，自动检测已关闭'), 'ok');
+    }
+  } catch (e) {
+    showStatus('✗ 无法连接本地服务，请关闭窗口后重新打开程序。', 'err');
+  }
+  saveBtn.disabled = false;
+  saveBtn.textContent = '保存设置';
+});
+
+load();
+</script>
+</body>
+</html>

@@ -75,7 +75,8 @@ button { font: inherit; }
   background: var(--surface); color: var(--text);
   height: 32px; padding: 0 14px; margin-top: 6px;
   border: 1px solid var(--control); border-radius: var(--radius-control);
-  cursor: pointer; font-size: 12px;
+  cursor: pointer; font-size: 12px; text-decoration: none;
+  margin-left: 6px;
 }
 .btn-ghost:hover { border-color: #9a9a9a; }
 .btn-ghost:disabled { color: var(--faint); cursor: default; }
@@ -240,6 +241,7 @@ button { font: inherit; }
     </div>
     <div class="stampbox">
       <span class="stamp">数据截至 <span class="num" id="stampTime">—</span></span>
+      <a class="btn-ghost" href="/settings" title="自动巡检与关闭窗口行为">设置</a>
       <button class="btn-ghost" id="refreshBtn" type="button">刷新数据</button>
     </div>
   </header>
@@ -249,7 +251,7 @@ button { font: inherit; }
     <aside class="col-rail" id="rail"></aside>
   </div>
 
-  <footer class="foot">延河课堂 × 乐学 · 数据来自平台官方接口 · 每日 9:00 自动巡检,也可随时手动刷新</footer>
+  <footer class="foot">延河课堂 × 乐学 · 数据来自平台官方接口 · <span id="footAuto">自动巡检</span>,也可随时手动刷新</footer>
 </div>
 
 <script>
@@ -475,15 +477,22 @@ refreshBtn.addEventListener("click", async () => {
     }
     await load();
   } catch (e) {
-    $("#finding").textContent = "刷新失败:请手动运行 python yanhekt_monitor.py 检查。";
+    $("#finding").textContent = "刷新失败,请稍后点[刷新数据]重试。";
   }
   refreshBtn.disabled = false;
   refreshBtn.textContent = "刷新数据";
 });
 
-// 窗口存活探测:服务凭所有窗口的这条长连接判断"还有人在用",
-// 全部窗口关闭后约 20 秒自动退出(无需任务管理器)
+// 窗口存活探测:服务凭所有窗口的这条长连接判断"还有人在用";
+// 关闭后是否退出由设置页的「关闭窗口时」决定。
 new EventSource('/api/live');
+
+// 页脚展示当前自动巡检设置
+fetch('/api/settings', { cache: 'no-store' }).then(r => r.json()).then(s => {
+  const el = document.getElementById('footAuto');
+  if (!el) return;
+  el.textContent = s.auto_check ? ('每天 ' + s.check_time + ' 自动巡检') : '自动巡检已关闭';
+}).catch(() => {});
 
 if (EMBEDDED) { DATA = EMBEDDED; render(); }
 load();

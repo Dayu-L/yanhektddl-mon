@@ -72,10 +72,6 @@ func runLogin() {
 	loginSt.mu.Unlock()
 	logger.Printf("[登录] 成功:%d 门课 %d 条任务", len(snap.Courses), len(snap.Items))
 
-	// 首次登录成功后顺带注册每日巡检(已存在则跳过)
-	if !taskExists() {
-		if err := installTask(); err == nil {
-			logger.Printf("[登录] 已注册每日 9:00 巡检任务")
-		}
-	}
+	// 首次登录成功后按设置同步每日巡检任务(已存在则跳过)
+	syncAutoCheck()
 }

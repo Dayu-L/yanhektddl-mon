@@ -12,22 +12,32 @@ import (
 )
 
 // 速查页与登录页的 <title>(--app 窗口的窗口标题就是页面标题)
-var appWindowTitles = []string{
+var dashboardTitles = []string{
 	"延河课堂 DDL",
 	"登录延河课堂 · 延河课堂 DDL",
 }
 
+// 设置页的窗口标题
+const settingsTitle = "设置 · 延河课堂 DDL"
+
+// allAppTitles 退出时要一并关闭的全部应用窗口(速查 + 登录 + 设置)
+func allAppTitles() []string {
+	out := append([]string{}, dashboardTitles...)
+	return append(out, settingsTitle)
+}
+
 // 新建窗口防抖:快速连点「打开窗口」时不至于开出多个
 var (
-	openMu   sync.Mutex
-	lastOpen time.Time
+	openMu           sync.Mutex
+	lastOpen         time.Time
+	lastSettingsOpen time.Time
 )
 
 // openWindow 显示速查窗口:已打开则切到前台,没打开才新建。
 // (系统没装 Edge 时退回默认浏览器)
 func openWindow(port int) {
 	// 已有窗口:幂等前置,无需防抖
-	if focusExistingAppWindow(appWindowTitles...) {
+	if focusExistingAppWindow(dashboardTitles...) {
 		logger.Printf(">> 速查窗口已存在,已切换到前台")
 		return
 	}
@@ -51,13 +61,37 @@ func openWindow(port int) {
 	logger.Printf(">> 已用默认浏览器打开速查页")
 }
 
+// openSettingsWindow 打开设置页(独立 --app 窗口);已打开则前置。
+func openSettingsWindow(port int) {
+	if focusExistingAppWindow(settingsTitle) {
+		logger.Printf(">> 设置窗口已存在,已切换到前台")
+		return
+	}
+	openMu.Lock()
+	if time.Since(lastSettingsOpen) < 2*time.Second {
+		openMu.Unlock()
+		return
+	}
+	lastSettingsOpen = time.Now()
+	openMu.Unlock()
+
+	url := fmt.Sprintf("http://127.0.0.1:%d/settings", port)
+	if bin := findBrowserBin(); bin != "" {
+		_ = exec.Command(bin, "--app="+url, "--window-size=760,780").Start()
+		logger.Printf(">> 已打开设置窗口")
+		return
+	}
+	_ = exec.Command("cmd", "/c", "start", url).Start()
+	logger.Printf(">> 已用默认浏览器打开设置页")
+}
+
 // shutdownAndExit 统一退出路径:先把速查窗口一并关掉,再退出进程。
 //
 // 不关窗口的话,托盘「退出」后屏幕上会留一个页面点不动的 Edge 窗口
 // (背后服务已死)。注意窗口是复用用户日常 Edge 进程的,所以只能
 // 按窗口发 WM_CLOSE,不能杀进程。
 func shutdownAndExit() {
-	if n := closeAppWindows(appWindowTitles...); n > 0 {
+	if n := closeAppWindows(allAppTitles()...); n > 0 {
 		logger.Printf(">> 已关闭 %d 个速查窗口", n)
 		time.Sleep(400 * time.Millisecond) // 给 WM_CLOSE 一点送达/关闭时间
 	}
@@ -122,16 +156,22 @@ func desktopMode() {
 	}()
 	time.Sleep(300 * time.Millisecond)
 
+	// 按设置同步自动巡检计划任务(开启则补建,关闭则删除)
+	syncAutoCheck()
+
 	// 首次运行还没有数据 -> 窗口会自动落到 /login 登录向导页,
 	// 由用户点[开始登录]再进入可见浏览器流程(不自动弹窗,避免吓到新手)
 	openWindow(port)
 	logger.Printf(">> 延河课堂 DDL 服务已启动:http://127.0.0.1:%d/", port)
-	logger.Printf(">> 关闭速查窗口后服务仍在托盘运行;右键托盘图标可「退出」")
+	logger.Printf(">> 托盘菜单:打开窗口 / 设置 / 退出(关闭窗口行为可在设置中修改)")
 
-	// 常驻托盘:右键菜单 打开窗口 / 退出。
-	// 关闭 Edge 窗口不再导致服务退出(托盘就是那个可见入口),
+	// 窗口存活看门狗:设置里选了“关闭即退出”时,所有窗口关闭后自动收尾;
+	// “最小化到托盘”则不退出,由托盘负责后续入口。
+	startLivenessWatchdog(false)
+
+	// 常驻托盘:右键菜单 打开窗口 / 设置 / 退出。
 	// 若托盘不可用则自动退回 watchdog 兜底(见 runTray)。
-	runTray(func() { openWindow(port) })
+	runTray(func() { openWindow(port) }, func() { openSettingsWindow(port) })
 }
 
 // wakeExisting 要求已运行的实例把窗口打开(第二个实例被拦下时用)。

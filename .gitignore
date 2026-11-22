@@ -3,6 +3,7 @@
 # ---------------------------------------------------------------
 browser_profile/
 ddl_data.json
+settings.json
 ddl_report.md
 ddl_report.csv
 

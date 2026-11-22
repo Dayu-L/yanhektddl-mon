@@ -22,6 +22,7 @@
 - **作业详情**:展开老师填写的作业要求原文
 - **后台刷新**:点「刷新数据」在后台重新抓取,不阻塞窗口
 - **每日巡检**:可选每天早上 9:00 自动检查,临期/漏交弹出 Windows 通知
+- **设置页**:自动检测开关与时间、关闭窗口行为(退出 / 最小化到托盘)都能自己改,设置保存在本机
 - **系统托盘**:关掉窗口后服务仍在托盘运行,右键「打开窗口 / 退出」,高分屏下菜单清晰(DPI 感知)
 - **严格单实例**:重复双击只会把已有窗口叫出来,不会起第二个服务(Windows 命名互斥量)
 - **报告输出**:同时生成 `ddl_report.md` / `ddl_report.csv` 报告文件
@@ -70,8 +71,9 @@
 | 点任意任务行 / 「打开 ↗」 | 直达该作业/测验页面 |
 | 点「详情」 | 展开老师写的作业要求原文 |
 | 点「刷新数据」 | 后台重新抓取(约 1-2 分钟) |
-| 每天早上 9:00(如已开启) | 自动巡检,临期/漏交弹 Windows 通知 |
-| **关闭速查窗口** | 服务继续在系统托盘运行;右键托盘图标可「打开窗口」或「退出」 |
+| 点右上角「设置」/ 托盘右键→设置 | 开关自动检测、设置检测时间、选择关闭窗口行为 |
+| 按设置的检测时间(如已开启) | 自动巡检,临期/漏交弹 Windows 通知 |
+| **关闭速查窗口** | 默认最小化到托盘(服务继续运行);若在设置里选了「退出程序」,最后一个窗口关闭约 20 秒后退出 |
 | **托盘左键单击 / 右键→打开窗口** | 同上:已有窗口则前置(最小化会自动还原),没有才新建 |
 | **托盘右键→退出** | 停止后台服务、关闭速查窗口并退出(彻底关闭的推荐方式;不影响你日常的 Edge 窗口) |
 
@@ -113,22 +115,22 @@
 
 **Q:数据存在哪?在本机怎么删?**
 全部在程序目录:`browser_profile\`(登录会话)、`ddl_data.json`(数据)、
-`ddl_report.md/.csv`(报告)。删除文件夹即彻底清除。
+`settings.json`(设置)、`ddl_report.md/.csv`(报告)。删除文件夹即彻底清除。
 
 **Q:想改巡检时间/频率?**
-```powershell
-yanhektddl.exe --watch 60 --notify   # 每 60 分钟巡检一次
-yanhektddl.exe --days 7              # "临期"阈值改为 7 天
-```
+打开速查页右上角「设置」(或托盘右键→设置):
+- 可开关自动检测,并把每日检测时间改成任意 `HH:MM`
+- 自动检测由 Windows 计划任务执行,程序没打开也会按时运行
+- 想更频繁地巡检,仍可用命令行 `yanhektddl.exe --watch 60 --notify`(每 60 分钟)
 
 **Q:双击后窗口一闪而过?**
 服务在后台运行并常驻系统托盘,速查窗口由 Edge 应用窗口承载。
 若 Edge 窗口没弹出,点托盘图标的「打开窗口」,或查看程序目录下 `server.log` 排错。
 
 **Q:程序怎么彻底关闭?**
-**右键系统托盘里的本程序图标 → 退出**。关掉速查窗口只是关了窗口,
-服务仍在托盘运行(这样下次点托盘就能秒开)。
-命令行也可以:`yanhektddl.exe --quit`。
+**右键系统托盘里的本程序图标 → 退出**。默认关掉速查窗口只是把它收进托盘,
+服务仍在运行;如果希望关窗即彻底退出,可在「设置 → 关闭窗口时」选择
+**退出程序**。命令行也可以:`yanhektddl.exe --quit`。
 
 **Q:Windows Defender 提示病毒?**
 旧版依赖库会在 `%TEMP%` 释放监视程序(易被误判);当前版本已彻底移除该行为,
@@ -168,11 +170,12 @@ yanhektddl-mon/
 ├─ browser.go / js.go      # 抓取:chromedp 驱动系统 Edge,平台接口 JS 片段
 ├─ report.go / types.go    # 数据模型、分组规则、Markdown/CSV 报告
 ├─ server.go / desktop.go  # 本地 HTTP 服务、桌面模式、窗口开关
+├─ settings.go             # 设置读写(自动检测/关闭行为)与计划任务同步
 ├─ tray.go / login.go      # 系统托盘、登录向导
 ├─ platform_windows.go     # Win32 适配层:控制台/DPI/单实例/窗口(纯 syscall,无 CGO)
 ├─ platform_other.go       # 非 Windows 占位实现
 ├─ assets/                 # app.ico(托盘与 exe 图标)、app.png
-├─ web/                    # dashboard.html(速查页)、login.html(登录向导)
+├─ web/                    # dashboard.html(速查页)、login.html、settings.html
 ├─ installer/              # installer.iss、中文语言包、build-installer.ps1
 ├─ scripts/                # 创建桌面快捷方式.bat、卸载.bat(便携版)
 ├─ tools/                  # make_icon.py(生成应用图标)
@@ -188,6 +191,7 @@ yanhektddl-mon/
 |---|---|
 | `browser_profile/` | 持久化浏览器会话(含登录 Cookie,**属于隐私数据**) |
 | `ddl_data.json` | 抓取数据快照(课程、任务、提交状态) |
+| `settings.json` | 用户设置(自动检测开关/时间、关闭窗口行为) |
 | `ddl_report.md` / `ddl_report.csv` | 生成的截止日期报告 |
 | `server.log` | 桌面模式运行日志 |
 
@@ -231,7 +235,7 @@ go test -run TestBrowserSmoke -v .
 
 # 构建 Windows 安装包(需 Inno Setup,缺失时自动经 winget 安装)
 ./installer/build-installer.ps1            # 产出 dist/yanhektddl-setup-<版本>.exe
-./installer/build-installer.ps1 -Version 0.3.2
+./installer/build-installer.ps1 -Version 0.4.0
 ```
 
 开发期也可以 `go run .` 代替构建(数据目录会自动落到工作目录)。
