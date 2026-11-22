@@ -20,11 +20,11 @@ import (
 var errNotLoggedIn = errors.New("未登录")
 
 const (
-	navSettle  = 2 * time.Second  // 页面跳转后的稳定等待(与旧版一致)
-	eclassWait = 3 * time.Second  // eclass SSO 跳转等待
-	actionTO   = 60 * time.Second // 单次导航/脚本执行上限
-	bootTO     = 30 * time.Second // 浏览器启动(管道模式之外的握手)上限
-	pipeBootTO = 12 * time.Second // 管道模式首次尝试上限:旧版浏览器不认 Windows 管道参数,尽快回退
+	actionTO     = 60 * time.Second // 单次导航/脚本执行上限
+	bootTO       = 30 * time.Second // 浏览器启动(管道模式之外的握手)上限
+	pipeBootTO   = 12 * time.Second // 管道模式首次尝试上限:旧版浏览器不认 Windows 管道参数,尽快回退
+	todosWaitTO  = 15 * time.Second // eclass 待办轮询窗口:覆盖会话过期后的 CAS 静默续期重定向链
+	aitaLoginTO  = 90 * time.Second // 登录向导中延河课堂(可选步骤)的等待上限
 )
 
 // preferWebSocket 记录本次运行是否已回退到 WebSocket 传输。
@@ -255,24 +255,15 @@ func (s *browserSession) resetTab() error {
 
 // ---------------------------------------------------------------- 登录与抓取
 
-// waitLogin 弹出可见窗口等待用户完成登录(含验证码),轮询直到会话生效。
-func waitLogin(s *browserSession, timeout time.Duration) bool {
-	_ = s.navigate(portalURL, navSettle)
-	s.bringToFront()
-	fmt.Println()
-	fmt.Println("============================================================")
-	fmt.Println(">>> 需要登录延河课堂:请在刚弹出的 Edge 窗口中输入 <<<")
-	fmt.Println("    账号 + 密码 + 图形验证码,然后点击[登录]")
-	fmt.Printf("    (最长等待 %d 分钟,登录成功后会自动继续)\n", int(timeout.Minutes()))
-	fmt.Println("============================================================")
-	fmt.Println()
-
+// pollProbe 每 3 秒在当前页面执行一次探测 JS,直到 ok 或超时。
+// 页面被用户关闭时自动重建标签页并重新导航。
+func pollProbe(s *browserSession, probeJS, reloadURL string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		out, err := s.eval("(" + jsCheckLogin + ")()")
+		out, err := s.eval("(" + probeJS + ")()")
 		if err != nil { // 页面可能被用户关闭 -> 自动重开
 			if rerr := s.resetTab(); rerr == nil {
-				_ = s.navigate(portalURL, navSettle)
+				_ = s.navigate(reloadURL, 0)
 				s.bringToFront()
 			}
 		} else {
@@ -280,7 +271,6 @@ func waitLogin(s *browserSession, timeout time.Duration) bool {
 				Ok bool `json:"ok"`
 			}
 			if json.Unmarshal([]byte(out), &chk) == nil && chk.Ok {
-				fmt.Println(">> 登录成功,会话已保存到 browser_profile (下次免登录)")
 				return true
 			}
 		}
@@ -289,86 +279,170 @@ func waitLogin(s *browserSession, timeout time.Duration) bool {
 	return false
 }
 
+// waitLoginEclass 登录向导第 1 步(必须):弹统一身份认证页,等待 eclass 会话生效。
+// 会话由 zy-eclass 的持久 cookie(约 24 小时)与北理工 CAS 会话共同维持,
+// 失效后经此页重新认证一次即可,支持 i北理 扫码 / 通行密钥 / 短信验证码。
+func waitLoginEclass(s *browserSession, timeout time.Duration) bool {
+	_ = s.navigate(eclassHome, 0)
+	s.bringToFront()
+	fmt.Println()
+	fmt.Println("============================================================")
+	fmt.Println(">>> 需要登录乐学 zy-eclass:请在 Edge 窗口完成 <<<")
+	fmt.Println("    北理工统一身份认证(支持 i北理 扫码 / 通行密钥 / 短信)")
+	fmt.Printf("    (最长等待 %d 分钟,登录成功后会自动继续)\n", int(timeout.Minutes()))
+	fmt.Println("============================================================")
+	fmt.Println()
+	return pollProbe(s, jsTodosReady, eclassHome, timeout)
+}
+
+// waitLoginAita 登录向导第 2 步(可选):登录延河课堂以更新课程关闭时间。
+// 不输入可直接等待超时,程序会沿用上次快照的课程数据。
+func waitLoginAita(s *browserSession, timeout time.Duration) bool {
+	_ = s.navigate(portalURL, 0)
+	s.bringToFront()
+	fmt.Println()
+	fmt.Println("------------------------------------------------------------")
+	fmt.Println(">>> 可选:登录延河课堂,更新课程关闭时间 <<<")
+	fmt.Println("    账号 + 密码 + 图形验证码;不输入则沿用上次数据,")
+	fmt.Printf("    %d 秒后自动继续\n", int(timeout.Seconds()))
+	fmt.Println("------------------------------------------------------------")
+	fmt.Println()
+	return pollProbe(s, jsCheckLogin, portalURL, timeout)
+}
+
 type collectResult struct {
 	Courses   []Course
 	Items     []Item
 	Submitted map[string][]interface{}
+	Deep      bool
 }
 
-// tryCollect 阶段1(延河课堂课程)+ 阶段2(eclass 任务)。
+// fetchAitaCourses 延河课堂课程列表(含课程关闭时间 EndAt)。
+// 该平台会话很短且不走 CAS 续期,所以只作为"尽力而为"的数据源:
+// ok=false 时调用方沿用上次快照的课程,核心待办抓取不受影响。
+func fetchAitaCourses(s *browserSession) ([]Course, bool) {
+	if err := s.navigate(portalURL, 0); err != nil {
+		return nil, false
+	}
+	// 导航刚完成 JS 上下文可能未就绪,重试 3 次
+	for attempt := 0; attempt < 3; attempt++ {
+		out, err := s.eval("(" + jsFetchCourses + ")()")
+		if err == nil {
+			var res struct {
+				Total   int      `json:"total"`
+				Courses []Course `json:"courses"`
+				Error   string   `json:"error"`
+			}
+			if json.Unmarshal([]byte(out), &res) == nil {
+				if res.Error == "" && res.Total > 0 {
+					return res.Courses, true
+				}
+				return nil, false // HTTP 401 等明确失败,重试无意义
+			}
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	return nil, false
+}
+
+// tryCollect 三阶段:
+//   阶段 1  延河课堂课程列表 —— 尽力而为,失败沿用缓存
+//   阶段 2  eclass 待办(快路径,/api/todos)—— 核心数据,必须成功
+//   阶段 3  深度扫描(可选)—— 逐课程并行扫,补齐已完成/已过期/问卷
+//
 // 未登录 -> errNotLoggedIn;成功 -> 结构化结果。
-func tryCollect(s *browserSession) (*collectResult, error) {
-	// ---- 阶段 1:延河课堂(课程列表 + 课程关闭时间) ----
-	if err := s.navigate(portalURL, navSettle); err != nil {
+func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
+	// ---- 阶段 1:延河课堂 ----
+	courses, aitaOK := fetchAitaCourses(s)
+	if !aitaOK {
+		if snap, err := loadSnapshot(); err == nil && len(snap.Courses) > 0 {
+			courses = snap.Courses
+			fmt.Printf(">> 延河课堂会话失效,课程/关闭时间沿用上次快照(%d 门课)\n", len(courses))
+		}
+	} else {
+		fmt.Printf(">> 延河课堂:共 %d 门课\n", len(courses))
+	}
+
+	// ---- 阶段 2:eclass 待办(快路径) ----
+	if err := s.navigate(eclassHome, 0); err != nil {
 		return nil, err
 	}
-	var chk struct {
-		Ok bool `json:"ok"`
+	var todos struct {
+		OK      bool   `json:"ok"`
+		Items   []Item `json:"items"`
+		Courses []struct {
+			ZyID  string `json:"zyId"`
+			Title string `json:"title"`
+		} `json:"courses"`
 	}
-	if out, err := s.eval("(" + jsCheckLogin + ")()"); err != nil {
-		return nil, err
-	} else if json.Unmarshal([]byte(out), &chk) != nil || !chk.Ok {
+	// 会话过期时此导航触发 CAS 静默续期(重定向链),轮询窗口要盖住它
+	ready := false
+	deadline := time.Now().Add(todosWaitTO)
+	for time.Now().Before(deadline) {
+		out, err := s.eval("(" + jsFetchTodos + ")()")
+		if err == nil && json.Unmarshal([]byte(out), &todos) == nil && todos.OK {
+			ready = true
+			break
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	if !ready {
 		return nil, errNotLoggedIn
 	}
+	// 待办里可能出现快照没有的新课程(半途选课):补进课程列表
+	have := map[string]bool{}
+	for _, c := range courses {
+		have[c.ZyID] = true
+	}
+	for _, c := range todos.Courses {
+		if c.ZyID != "" && !have[c.ZyID] {
+			courses = append(courses, Course{Title: c.Title, ZyID: c.ZyID})
+		}
+	}
+	items := todos.Items
+	submitted := map[string][]interface{}{}
+	fmt.Printf(">> 乐学待办(快路径):未提交任务 %d 条\n", len(items))
 
-	out, err := s.eval("(" + jsFetchCourses + ")()")
-	if err != nil {
-		return nil, err
-	}
-	var coursesRes struct {
-		Total   int      `json:"total"`
-		Courses []Course `json:"courses"`
-		Error   string   `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(out), &coursesRes); err != nil {
-		return nil, err
-	}
-	if coursesRes.Error != "" {
-		return nil, fmt.Errorf("课程列表获取失败:%s", coursesRes.Error)
-	}
-	fmt.Printf(">> 延河课堂:共 %d 门课\n", coursesRes.Total)
-
-	// ---- 阶段 2:eclass(作业 / 考试 / 问卷 + 提交状态) ----
-	var zyIDs []string
-	for _, c := range coursesRes.Courses {
-		if c.ZyID != "" {
-			zyIDs = append(zyIDs, c.ZyID)
+	// ---- 阶段 3:深度扫描 ----
+	if deep {
+		var zyIDs []string
+		for _, c := range courses {
+			if c.ZyID != "" {
+				zyIDs = append(zyIDs, c.ZyID)
+			}
+		}
+		if len(zyIDs) > 0 {
+			zyJSON, _ := json.Marshal(zyIDs)
+			out, err := s.eval("(" + jsCollectEclass + ")(" + string(zyJSON) + ")")
+			if err != nil {
+				return nil, err
+			}
+			var ec struct {
+				Items          []Item                   `json:"items"`
+				SubmittedExams map[string][]interface{} `json:"submittedExams"`
+			}
+			if err := json.Unmarshal([]byte(out), &ec); err != nil {
+				return nil, err
+			}
+			if ec.Items != nil {
+				items = ec.Items
+			}
+			if ec.SubmittedExams != nil {
+				submitted = ec.SubmittedExams
+			}
+			fmt.Printf(">> 深度扫描:%d 门课,带截止时间的任务 %d 条\n",
+				len(zyIDs), len(items))
 		}
 	}
-	res := &collectResult{Courses: coursesRes.Courses,
-		Items: []Item{}, Submitted: map[string][]interface{}{}}
-	if len(zyIDs) > 0 {
-		// 任意课程页触发 CAS->eclass SSO,自动建立 eclass 会话
-		if err := s.navigate(eclassBase+"/course/"+zyIDs[0]+"/content", eclassWait); err != nil {
-			return nil, err
-		}
-		zyJSON, _ := json.Marshal(zyIDs)
-		out, err = s.eval("(" + jsCollectEclass + ")(" + string(zyJSON) + ")")
-		if err != nil {
-			return nil, err
-		}
-		var ec struct {
-			Items          []Item                   `json:"items"`
-			SubmittedExams map[string][]interface{} `json:"submittedExams"`
-		}
-		if err := json.Unmarshal([]byte(out), &ec); err != nil {
-			return nil, err
-		}
-		res.Items = ec.Items
-		if ec.SubmittedExams != nil {
-			res.Submitted = ec.SubmittedExams
-		}
-		fmt.Printf(">> 乐学 eclass:已扫描 %d 门课,带截止时间的任务 %d 条\n",
-			len(zyIDs), len(res.Items))
-	}
-	return res, nil
+	return &collectResult{Courses: courses, Items: items,
+		Submitted: submitted, Deep: deep}, nil
 }
 
 // ---------------------------------------------------------------- 主流程
 
 // collectSnapshot 完整抓取一次并保存 ddl_data.json;需要时自动弹 Edge 登录窗。
-func collectSnapshot(days int, visible bool) (*Snapshot, error) {
-	return collectSnapshotMode(visible, false)
+func collectSnapshot(days int, visible, forceDeep bool) (*Snapshot, error) {
+	return collectSnapshotMode(visible, false, forceDeep)
 }
 
 // collectSnapshotForLogin 登录向导专用:直接以可见窗口进入“等用户登录”流程。
@@ -378,10 +452,24 @@ func collectSnapshot(days int, visible bool) (*Snapshot, error) {
 // "chrome failed to start"(stderr 为空)。慢机器/杀软实时扫描时这个
 // 竞态窗口会放大,于是“开发机正常、别人电脑秒失败”。
 func collectSnapshotForLogin() (*Snapshot, error) {
-	return collectSnapshotMode(true, true)
+	return collectSnapshotMode(true, true, true)
 }
 
-func collectSnapshotMode(visible, forceLogin bool) (*Snapshot, error) {
+// needDeepScan 今天还没有深度扫描过 -> 需要一次。
+// 深扫负责补齐快路径看不到的数据:已完成/已过期未提交/问卷/课程关闭时间。
+func needDeepScan() bool {
+	snap, err := loadSnapshot()
+	if err != nil || snap.DeepAt == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, snap.DeepAt)
+	if err != nil {
+		return true
+	}
+	return t.In(TZ).Format("2006-01-02") != time.Now().In(TZ).Format("2006-01-02")
+}
+
+func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error) {
 	s, err := openBrowser(visible)
 	if err != nil {
 		return nil, err
@@ -392,22 +480,26 @@ func collectSnapshotMode(visible, forceLogin bool) (*Snapshot, error) {
 			s.close()
 		}
 	}()
+	deep := forceDeep || needDeepScan()
 
 	if forceLogin {
-		if !waitLogin(s, loginWait) {
-			return nil, errors.New("等待登录超时,未获取到有效会话")
+		if !waitLoginEclass(s, loginWait) {
+			return nil, errors.New("等待统一身份认证超时,未获取到有效会话")
 		}
-		res, err := tryCollect(s)
+		if !waitLoginAita(s, aitaLoginTO) {
+			fmt.Println(">> 已跳过延河课堂登录:课程关闭时间沿用上次快照")
+		}
+		res, err := tryCollect(s, deep)
 		if err == errNotLoggedIn {
 			return nil, errors.New("登录后仍未获取到有效会话,请检查账号")
 		}
 		if err != nil {
 			return nil, err
 		}
-		return saveCollected(res)
+		return saveCollected(res, deep)
 	}
 
-	res, err := tryCollect(s)
+	res, err := tryCollect(s, deep)
 	if err == errNotLoggedIn && !visible { // 需要人工登录 -> 换可见窗口
 		s.close()
 		s = nil
@@ -418,10 +510,13 @@ func collectSnapshotMode(visible, forceLogin bool) (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !waitLogin(s, loginWait) {
-			return nil, errors.New("等待登录超时,未获取到有效会话")
+		if !waitLoginEclass(s, loginWait) {
+			return nil, errors.New("等待统一身份认证超时,未获取到有效会话")
 		}
-		res, err = tryCollect(s)
+		if !waitLoginAita(s, aitaLoginTO) {
+			fmt.Println(">> 已跳过延河课堂登录:课程关闭时间沿用上次快照")
+		}
+		res, err = tryCollect(s, deep)
 		if err == errNotLoggedIn {
 			return nil, errors.New("登录后仍未获取到有效会话,请检查账号")
 		}
@@ -429,13 +524,22 @@ func collectSnapshotMode(visible, forceLogin bool) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return saveCollected(res)
+	return saveCollected(res, deep)
 }
 
 // saveCollected 把抓取结果落盘成快照,供报告与速查页共用。
-func saveCollected(res *collectResult) (*Snapshot, error) {
+// 深度扫描时刷新 deepAt;快路径保留上次 deepAt(每日首轮判断依据)。
+func saveCollected(res *collectResult, deep bool) (*Snapshot, error) {
+	var deepAt string
+	if snap, err := loadSnapshot(); err == nil {
+		deepAt = snap.DeepAt
+	}
+	if deep {
+		deepAt = time.Now().In(TZ).Format(time.RFC3339)
+	}
 	snap := &Snapshot{
 		FetchedAt:      time.Now().In(TZ).Format(time.RFC3339),
+		DeepAt:         deepAt,
 		Courses:        res.Courses,
 		Items:          res.Items,
 		SubmittedExams: res.Submitted,

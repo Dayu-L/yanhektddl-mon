@@ -11,7 +11,7 @@
 #define MyAppName "延河课堂 DDL"
 ; 版本号可由 build-installer.ps1 经 /D 传入,缺省 0.4.0
 #ifndef MyAppVersion
-#define MyAppVersion "0.5.0"
+#define MyAppVersion "0.6.0"
 #endif
 #define MyAppPublisher "Dayu-L"
 #define MyAppExeName "yanhektddl.exe"

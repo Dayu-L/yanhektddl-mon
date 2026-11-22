@@ -15,6 +15,7 @@ const (
 	portalURL  = "https://aita.yanhekt.cn/education/?tenant_code=21#/home"
 	courseAPI  = "https://aita.yanhekt.cn/personal/courseapi/vlabpassportapi/v1/account-profile/course?nowpage=1&per-page=100"
 	eclassBase = "https://zy-eclass.bit.edu.cn"
+	eclassHome = eclassBase + "/user/index#/"
 
 	loginWait = 10 * time.Minute // 等待人工登录的最长时间
 	portFirst = 8765             // 本地服务端口范围

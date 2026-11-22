@@ -16,7 +16,7 @@ var dashboardHTML string
 
 // 版本号:默认值与 installer.iss/build-installer.ps1 保持一致,
 // 官方构建经 -ldflags "-X main.version=<版本>" 注入
-var version = "0.5.0"
+var version = "0.6.0"
 
 // preprocessArgs 把裸的 --from-json 补成 --from-json=(即“使用默认快照路径”),
 // 以保持与旧版 `--from-json [路径]` 兼容。
@@ -52,6 +52,7 @@ func main() {
 	notifyFlag := flag.Bool("notify", false, "发现临期/漏交任务时弹 Windows 通知")
 	visible := flag.Bool("visible", false, "以可见窗口运行浏览器(调试用)")
 	fetch := flag.Bool("fetch", false, "单次抓取并生成报告")
+	deepFlag := flag.Bool("deep", false, "强制深度扫描(默认每天首轮抓取时自动深扫)")
 	fromJSON := flag.String("from-json", "", "不联网,用数据快照生成报告(可选指定路径)")
 	installFlag := flag.Bool("install-task", false, "注册每天 9:00 巡检计划任务")
 	uninstallFlag := flag.Bool("uninstall-task", false, "删除巡检计划任务")
@@ -121,7 +122,7 @@ func main() {
 		utf8Console()
 		fmt.Printf("循环监控已启动:每 %d 分钟检查一次,Ctrl+C 退出。\n", *watch)
 		for {
-			fetchOnce(*days, *visible, *notifyFlag)
+			fetchOnce(*days, *visible, *notifyFlag, *deepFlag)
 			time.Sleep(time.Duration(*watch) * time.Minute)
 		}
 	}
@@ -133,7 +134,7 @@ func main() {
 		} else {
 			utf8Console()
 		}
-		if !fetchOnce(*days, *visible, *notifyFlag) {
+		if !fetchOnce(*days, *visible, *notifyFlag, *deepFlag) {
 			os.Exit(1)
 		}
 		return
@@ -146,8 +147,8 @@ func main() {
 }
 
 // fetchOnce 完整抓取一次并生成报告与通知;返回是否有临期/漏交事项
-func fetchOnce(days int, visible, withNotify bool) bool {
-	snap, err := collectSnapshot(days, visible)
+func fetchOnce(days int, visible, withNotify, forceDeep bool) bool {
+	snap, err := collectSnapshot(days, visible, forceDeep)
 	if err != nil {
 		fmt.Printf("[!] 抓取失败:%v\n", err)
 		return false

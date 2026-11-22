@@ -32,6 +32,7 @@ type Item struct {
 
 type Snapshot struct {
 	FetchedAt      string                   `json:"fetched_at"`
+	DeepAt         string                   `json:"deepAt,omitempty"` // 最近一次深度扫描(RFC3339;每天首轮自动深扫)
 	Courses        []Course                 `json:"courses"`
 	Items          []Item                   `json:"items"`
 	SubmittedExams map[string][]interface{} `json:"submittedExams"`

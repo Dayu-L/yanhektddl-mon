@@ -122,7 +122,7 @@ func runRefresh(days int) {
 	}()
 
 	logger.Printf("[刷新] 开始后台抓取…")
-	snap, err := collectSnapshot(days, false)
+	snap, err := collectSnapshot(days, false, false)
 	if err != nil {
 		logger.Printf("[刷新] 抓取失败:%v", err)
 		setLoginRequired(errors.Is(err, errNotLoggedIn) || strings.Contains(err.Error(), "登录"))

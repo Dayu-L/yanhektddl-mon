@@ -1,8 +1,13 @@
 package main
 
-// 在浏览器会话内执行的三段 JS,与 legacy_python/yanhekt_monitor.py 中的
-// CHECK_LOGIN_JS / FETCH_COURSES_JS / COLLECT_ECLASS_JS 逻辑一一对应,
-// 仅把返回值改为 JSON.stringify 字符串,便于 Go 解析。
+// 在浏览器会话内执行的四段 JS:
+//   jsCheckLogin    —— aita 登录态探测(登录向导的延河课堂阶段用)
+//   jsFetchCourses  —— 延河课堂课程列表(含课程关闭时间 EndAt)
+//   jsFetchTodos    —— [快路径] eclass 聚合待办接口 /api/todos,
+//                      一次拿到全部课程"未提交且未过期"的任务,再并行补详情
+//   jsCollectEclass —— [深扫] 逐课程扫 activities/exams/submitted-exams,
+//                      课程级并发 + 详情请求全局信号量
+// 返回值统一为 JSON.stringify 字符串,便于 Go 解析。
 
 // 在 aita.yanhekt.cn 域内探测登录状态
 const jsCheckLogin = `async () => {
@@ -15,7 +20,8 @@ const jsCheckLogin = `async () => {
   } catch (e) { return JSON.stringify({ok: false}); }
 }`
 
-// 抓取延河课堂全部课程(在 aita.yanhekt.cn 域内执行)
+// 抓取延河课堂全部课程(在 aita.yanhekt.cn 域内执行)。
+// 会话失效返回 error 字段(HTTP 401),Go 侧据此走"沿用缓存"分支。
 const jsFetchCourses = `async () => {
   const r = await fetch('` + courseAPI + `', {credentials: 'include',
     headers: {'accept-content-type': 'application/json', 'x-requested-with': 'XMLHttpRequest'}});
@@ -31,7 +37,55 @@ const jsFetchCourses = `async () => {
   return JSON.stringify({total: res.total, courses: courses});
 }`
 
-// 在 zy-eclass 域内抓取每门课的作业/考试/问卷 + 提交状态
+// eclass 待办就绪探测:登录向导轮询用(在 zy-eclass 域内执行)
+const jsTodosReady = `async () => {
+  try {
+    const r = await fetch('/api/todos?no-intercept=true', {credentials: 'include'});
+    if (!r.ok) return JSON.stringify({ok: false});
+    const ct = r.headers.get('content-type') || '';
+    if (ct.indexOf('json') < 0) return JSON.stringify({ok: false});
+    const j = await r.json();
+    return JSON.stringify({ok: Array.isArray(j.todo_list)});
+  } catch (e) { return JSON.stringify({ok: false}); }
+}`
+
+// [快路径] eclass 聚合待办(在 zy-eclass 域内执行)。
+// /api/todos 一次返回全部课程"未提交且未过期"的任务,字段齐全
+// (course_id 即延河课堂 zhiyuan_id);再一轮并行 fetch 补作业详情
+// (user_submit_count / 描述)。考试本就未提交,无需提交状态字段。
+const jsFetchTodos = `async () => {
+  const r = await fetch('/api/todos?no-intercept=true', {credentials: 'include'});
+  if (!r.ok) return JSON.stringify({ok: false, why: 'HTTP ' + r.status});
+  const ct = r.headers.get('content-type') || '';
+  if (ct.indexOf('json') < 0) return JSON.stringify({ok: false, why: 'not-json'});
+  const j = await r.json();
+  if (!Array.isArray(j.todo_list)) return JSON.stringify({ok: false, why: 'no-list'});
+  const items = j.todo_list.map(x => ({
+    zy: String(x.course_id), kind: x.type, id: x.id, title: x.title,
+    end: x.end_time || '', sc: -1, desc: ''
+  }));
+  const courses = [], seen = {};
+  for (const x of j.todo_list) {
+    if (x.course_id && !seen[x.course_id]) {
+      seen[x.course_id] = 1;
+      courses.push({zyId: String(x.course_id), title: x.course_name || ''});
+    }
+  }
+  await Promise.all(items.map(async (it) => {
+    try {
+      const d = await fetch('/api/activities/' + it.id, {credentials: 'include'});
+      if (!d.ok) return;
+      const j = await d.json();
+      if (it.kind !== 'exam') it.sc = (j.user_submit_count == null) ? 0 : j.user_submit_count;
+      it.desc = (j.data && j.data.description) || j.description || '';
+    } catch (e) {}
+  }));
+  return JSON.stringify({ok: true, items: items, courses: courses});
+}`
+
+// [深扫] 在 zy-eclass 域内抓取每门课的作业/考试/问卷 + 提交状态。
+// 相比旧版串行逐课,这里课程级 6 路并发,活动详情走全局 12 路信号量,
+// 15 门课约 19 秒 -> 3-4 秒。
 const jsCollectEclass = `async (zyIds) => {
   const get = async (u) => {
     try {
@@ -44,7 +98,20 @@ const jsCollectEclass = `async (zyIds) => {
   };
   const items = [];
   const submittedExams = {};
-  for (const id of zyIds) {
+  // 活动详情全局信号量:课程并发叠加时限制 in-flight 详情请求总数
+  let detActive = 0;
+  const detQueue = [];
+  const pump = () => {
+    while (detActive < 12 && detQueue.length) {
+      const t = detQueue.shift();
+      detActive++;
+      get(t.url).then(d => { detActive--; t.res(d); pump(); });
+    }
+  };
+  const getDetail = (id) => new Promise(res => {
+    detQueue.push({url: '/api/activities/' + id, res: res}); pump();
+  });
+  const scanCourse = async (id) => {
     const [a, e, se] = await Promise.all([
       get('/api/courses/' + id + '/activities?sub_course_id=0'),
       get('/api/courses/' + id + '/exams'),
@@ -63,18 +130,26 @@ const jsCollectEclass = `async (zyIds) => {
       if (x.end_time) items.push({zy: id, kind: 'exam', id: x.id, title: x.title,
                                   end: x.end_time, sc: -1, desc: x.description || ''});
     }
-    // 并发拉取作业详情(user_submit_count / 描述),10 个一批
-    for (let i = 0; i < details.length; i += 10) {
-      const batch = details.slice(i, i + 10);
-      const res = await Promise.all(batch.map(d => get('/api/activities/' + d)));
-      res.forEach((d, k) => {
-        const it = items.find(t => t.zy === id && t.id === batch[k] && t.kind !== 'exam');
-        if (d && it) {
-          it.sc = (d.user_submit_count == null) ? -1 : d.user_submit_count;
-          it.desc = (d.data && d.data.description) || '';
-        }
-      });
-    }
+    await Promise.all(details.map(d => getDetail(d).then(info => {
+      if (!info) return;
+      const it = items.find(t => t.zy === id && t.id === d && t.kind !== 'exam');
+      if (it) {
+        it.sc = (info.user_submit_count == null) ? -1 : info.user_submit_count;
+        it.desc = (info.data && info.data.description) || '';
+      }
+    })));
+  };
+  let idx = 0;
+  const workers = [];
+  for (let k = 0; k < 6 && k < zyIds.length; k++) {
+    workers.push((async () => {
+      while (true) {
+        const i = idx++;
+        if (i >= zyIds.length) return;
+        await scanCourse(zyIds[i]);
+      }
+    })());
   }
+  await Promise.all(workers);
   return JSON.stringify({items: items, submittedExams: submittedExams});
 }`
