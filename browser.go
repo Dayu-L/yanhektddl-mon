@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -165,6 +166,16 @@ func tryOpenBrowser(visible, ws bool, timeout time.Duration) (*browserSession, e
 		// 在杀软眼里是恶意软件常用特征。抓取走的是已登录会话内的普通
 		// fetch,平台并不检查 navigator.webdriver,无需伪装。
 	)
+	if strings.EqualFold(filepath.Base(bin), "msedge.exe") {
+		// Edge 133+ 已知 bug(EdgeWebDriver#189、playwright-dotnet#3155):
+		// 新路径/新环境下首次启动会被 Windows 程序兼容性助手(PCA)盯上,
+		// Edge 随即自我重启一次(给新进程追加 --edge-skip-compat-layer-relaunch
+		// 防止循环),原进程立刻退出。chromedp 只看到子进程死掉且 stderr 为空,
+		// 报 "chrome failed to start",重启出来的 Edge 则变成停在 about:blank
+		// 的孤儿窗口,谁也控制不了。主动带上该标志即可跳过这次重启。
+		// 仅对 msedge 加:Chrome 不认识这个标志,会弹警告条。
+		opts = append(opts, chromedp.Flag("edge-skip-compat-layer-relaunch", true))
+	}
 	if ws {
 		// WebSocket 传输:兼容老版 Chromium。端口固定随机并只绑本机。
 		opts = append(opts,

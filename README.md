@@ -113,6 +113,11 @@
 2. 右键系统托盘图标「退出」后重新打开程序
 3. 仍不行,把程序目录下的 `server.log` 发给开发者(里面有浏览器路径与完整报错)
 
+> 若报错时弹出的 Edge 窗口停在 `about:blank` 一动不动,属于 Edge 133+ 的
+> 兼容层重启 bug(Edge 启动后自我重启一次,原进程随即退出,自动化端就此失联)。
+> 程序已通过启动参数 `--edge-skip-compat-layer-relaunch` 规避;旧版安装包遇到
+> 此问题请更新到最新版。
+
 **Q:数据存在哪?在本机怎么删?**
 全部在程序目录:`browser_profile\`(登录会话)、`ddl_data.json`(数据)、
 `settings.json`(设置)、`ddl_report.md/.csv`(报告)。删除文件夹即彻底清除。
