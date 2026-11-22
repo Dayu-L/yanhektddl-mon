@@ -108,6 +108,11 @@ func truncate(s string, n int) string {
 
 // ---------------------------------------------------------------- 报告构建
 
+// autoIgnoreAfter 已过期超过该时长且未完成的任务自动忽略:
+// 补交早已无望,继续留在“已过期未提交”里只会制造噪音。计算得出、
+// 不写入 ignored.json —— 若老师事后延长截止时间,任务会自动回到待办。
+const autoIgnoreAfter = 48 * time.Hour
+
 // buildReport 对应 python build_report:统一计算排序、分组、课程关闭时间。
 // ignored 为用户标记的忽略清单(key 见 ignoreKey):被忽略且未完成的任务
 // 单独归入 Bucket.Ignored,不进入临期/漏交分组,不触发通知。
@@ -196,6 +201,12 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 		// 已忽略且未完成:单独成组,不参与临期/漏交/未知统计
 		// (已完成的任务“忽略”无意义,照常进已完成组)
 		if r.Ignored && !r.Done {
+			rep.Bucket.Ignored = append(rep.Bucket.Ignored, r)
+			continue
+		}
+		// 已过期超过 48 小时且未完成:自动忽略,同样移出临期/漏交
+		if !r.Done && !r.NoNeed && r.End.Before(now.Add(-autoIgnoreAfter)) {
+			r.AutoIgnored = true
 			rep.Bucket.Ignored = append(rep.Bucket.Ignored, r)
 			continue
 		}
@@ -291,6 +302,9 @@ func writeReports(rep *Report, urgentDays int) {
 		L = append(L, "\n## ❗ 已过期且未提交(尽快联系老师补交)\n")
 		L = append(L, mdTable(rep.Bucket.Missed, now))
 	}
+	if n := autoIgnoredCount(rep.Rows); n > 0 {
+		L = append(L, fmt.Sprintf("\n> 另有 %d 项已过期超过 48 小时,已自动忽略,不再列入提醒。\n", n))
+	}
 	if len(rep.Bucket.Unknown) > 0 {
 		L = append(L, "\n## ❓ 提交状态未知(建议打开链接人工确认)\n")
 		L = append(L, mdTable(rep.Bucket.Unknown, now))
@@ -337,6 +351,8 @@ func writeReports(rep *Report, urgentDays int) {
 	for _, r := range rep.Rows {
 		note := r.Desc
 		switch {
+		case r.AutoIgnored:
+			note = "已过期超 48 小时,自动忽略"
 		case r.NoNeed && r.Ignored:
 			note = "无需提交(练习);已忽略"
 		case r.NoNeed:
@@ -391,4 +407,15 @@ func printSummary(rep *Report, urgentDays int) {
 // hasUrgent 是否存在临期或漏交(用于通知判断)
 func hasUrgent(rep *Report) bool {
 	return len(rep.Bucket.Urgent) > 0 || len(rep.Bucket.Missed) > 0
+}
+
+// autoIgnoredCount 自动忽略(已过期超 48 小时)的任务数
+func autoIgnoredCount(rows []*Row) int {
+	n := 0
+	for _, r := range rows {
+		if r.AutoIgnored {
+			n++
+		}
+	}
+	return n
 }

@@ -48,6 +48,7 @@ type Row struct {
 	Done   bool
 	NoNeed bool
 	Ignored bool // 用户在速查页标记“忽略”(不再提醒/统计)
+	AutoIgnored bool // 已过期超过 48 小时,自动忽略(计算得出,不落盘)
 	ID     string
 	Desc   string // strip_html 后、截断 60 字(报告用)
 	Full   string // desc_to_text 后全文(速查页详情用)

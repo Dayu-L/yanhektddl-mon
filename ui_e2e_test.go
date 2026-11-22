@@ -50,7 +50,9 @@ func TestIgnoreUIE2E(t *testing.T) {
 			os.Remove(dataPath)
 		}
 	})
-	if err := os.WriteFile(dataPath, []byte(`{"fetched_at":"2026-11-22T20:00:00+08:00","courses":[{"zyId":"zy1","title":"数据结构","endAt":0}],"items":[{"zy":"zy1","kind":"homework","id":7,"title":"作业一","end":"2026-11-23T23:59:00+08:00","sc":0,"desc":"说明文字"}]}`), 0o644); err != nil {
+	if err := os.WriteFile(dataPath, []byte(`{"fetched_at":"2026-11-22T20:00:00+08:00","courses":[{"zyId":"zy1","title":"数据结构","endAt":0}],"items":[`+
+		`{"zy":"zy1","kind":"homework","id":7,"title":"作业一","end":"2026-11-23T23:59:00+08:00","sc":0,"desc":"说明文字"},`+
+		`{"zy":"zy1","kind":"homework","id":8,"title":"旧作业","end":"2026-11-18T23:59:00+08:00","sc":0,"desc":""}]}`), 0o644); err != nil {
 		t.Fatalf("写测试快照失败:%v", err)
 	}
 
@@ -86,23 +88,34 @@ func TestIgnoreUIE2E(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// 页面重渲染:该任务出现在「已忽略」,并给出“取消忽略”按钮
+	// 页面重渲染:手动忽略的任务移入「已忽略」并带“取消忽略”按钮;
+	// 同时确认自动忽略行(旧作业)没有恢复按钮
 	got := waitEval(t, s, `(() => {
 		const sec = document.getElementById('ignoredlist');
 		if (!sec) return '';
-		const row = sec.querySelector('.row');
-		if (!row || !row.querySelector('[data-unignore]')) return '';
-		return row.querySelector('.r-title').textContent;
+		const btn = sec.querySelector('[data-unignore]');
+		if (!btn) return '';
+		return btn.closest('.row').querySelector('.r-title').textContent;
 	})()`, 20*time.Second)
 	if strings.TrimSpace(got) != strings.TrimSpace(title) {
 		t.Fatalf("已忽略行标题应保持 %q,实际 %q", title, got)
 	}
+	if out, err := s.eval(`(() => {
+		const sec = document.getElementById('ignoredlist');
+		const first = sec.querySelector('.row');
+		return String(!first.querySelector('[data-unignore]') &&
+			first.querySelector('.r-title').textContent.indexOf('旧作业') >= 0);
+	})()`); err != nil {
+		t.Fatalf("检查自动忽略行失败:%v", err)
+	} else if out != "true" {
+		t.Fatalf("自动忽略行(旧作业)不应带恢复按钮")
+	}
 
-	// 待办分组中不应再出现该任务
-	if out, err := s.eval(`(() => String(document.getElementById('urgent').querySelectorAll('.row').length))()`); err != nil {
+	// 待办分组:唯一的临期任务被忽略后,空卡片应整体隐藏
+	if out, err := s.eval(`(() => String(document.getElementById('urgent') === null))()`); err != nil {
 		t.Fatalf("查询待办分组失败:%v", err)
-	} else if out != "0" {
-		t.Fatalf("忽略后 3 天内截止组应为空,实际 %s 行", out)
+	} else if out != "true" {
+		t.Fatalf("忽略后空的 3 天内截止卡片应隐藏")
 	}
 
 	// 取消忽略:回到待办分组
@@ -116,5 +129,9 @@ func TestIgnoreUIE2E(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	waitEval(t, s, `(() => String(document.getElementById('urgent').querySelectorAll('.row').length))()`, 20*time.Second)
+	// 恢复后:临期卡片重新出现并包含该任务
+	waitEval(t, s, `(() => {
+		const sec = document.getElementById('urgent');
+		return sec && sec.querySelectorAll('.row').length === 1 ? 'back' : '';
+	})()`, 20*time.Second)
 }

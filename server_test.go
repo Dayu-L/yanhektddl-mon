@@ -87,7 +87,9 @@ func TestRenderPageIgnoreContract(t *testing.T) {
 	f.WriteString(`{"fetched_at":"2026-11-22T20:00:00+08:00","courses":[` +
 		`{"zyId":"zy1","title":"数据结构","endAt":0}],` +
 		`"items":[{"zy":"zy1","kind":"homework","id":7,"title":"作业一",` +
-		`"end":"2026-11-23T23:59:00+08:00","sc":0,"desc":""}]}`)
+		`"end":"2026-11-23T23:59:00+08:00","sc":0,"desc":""},` +
+		`{"zy":"zy1","kind":"homework","id":8,"title":"旧作业",` +
+		`"end":"2026-11-18T23:59:00+08:00","sc":0,"desc":""}]}`)
 	f.Close()
 
 	page, err := renderPage()
@@ -101,8 +103,11 @@ func TestRenderPageIgnoreContract(t *testing.T) {
 	if !strings.Contains(s, `"key":"zy1#7"`) {
 		t.Fatalf("行数据应包含忽略标记 key")
 	}
-	if !strings.Contains(s, `"course_count":1`) || !strings.Contains(s, `"item_count":1`) {
+	if !strings.Contains(s, `"course_count":1`) || !strings.Contains(s, `"item_count":2`) {
 		t.Fatalf("渲染数据应包含标题行概览计数")
+	}
+	if !strings.Contains(s, `"auto":true`) {
+		t.Fatalf("过期超 48 小时的行应带 auto 标记")
 	}
 	if strings.Contains(s, `"closes"`) {
 		t.Fatalf("渲染数据不应再包含 closes")

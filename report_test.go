@@ -55,3 +55,47 @@ func TestBuildReportIgnored(t *testing.T) {
 		t.Fatalf("未忽略时应触发临期通知")
 	}
 }
+
+// 自动忽略:已过期超过 48 小时且未完成的任务移入 Ignored 组(计算得出,
+// 不落盘);48 小时内过期的仍留在 Missed;已完成/无需提交的不自动忽略。
+func TestBuildReportAutoIgnore(t *testing.T) {
+	now := time.Now().In(TZ)
+	items := []Item{
+		{Zy: "zy1", Kind: "homework", ID: 201, Title: "刚过期12小时",
+			End: now.Add(-12 * time.Hour).Format(time.RFC3339), SC: 0},
+		{Zy: "zy1", Kind: "homework", ID: 202, Title: "过期72小时",
+			End: now.Add(-72 * time.Hour).Format(time.RFC3339), SC: 0},
+		{Zy: "zy1", Kind: "homework", ID: 203, Title: "过期72小时但已完成",
+			End: now.Add(-72 * time.Hour).Format(time.RFC3339), SC: 2},
+		{Zy: "zy1", Kind: "homework", ID: 204, Title: "过期72小时但无需提交",
+			End: now.Add(-72 * time.Hour).Format(time.RFC3339), SC: 0,
+			Desc: "本任务仅供练习,无需提交"},
+	}
+	courses := []Course{{ZyID: "zy1", Title: "数据结构"}}
+
+	rep := buildReport(courses, items, nil, 3, nil)
+
+	if len(rep.Bucket.Missed) != 1 || rep.Bucket.Missed[0].ID != "201" {
+		t.Fatalf("48 小时内过期的应留在 Missed,实际 %d 项", len(rep.Bucket.Missed))
+	}
+	if !hasUrgent(rep) {
+		t.Fatalf("48 小时内过期未提交应触发通知")
+	}
+	if len(rep.Bucket.Ignored) != 1 || rep.Bucket.Ignored[0].ID != "202" {
+		t.Fatalf("过期超 48 小时未完成的应自动忽略,实际 %d 项", len(rep.Bucket.Ignored))
+	}
+	if !rep.Bucket.Ignored[0].AutoIgnored || rep.Bucket.Ignored[0].Ignored {
+		t.Fatalf("自动忽略行应只带 AutoIgnored 标记")
+	}
+	if n := autoIgnoredCount(rep.Rows); n != 1 {
+		t.Fatalf("autoIgnoredCount 应为 1,实际 %d", n)
+	}
+	for _, r := range rep.Rows {
+		if (r.ID == "203" || r.ID == "204") && r.AutoIgnored {
+			t.Fatalf("已完成/无需提交的任务不应自动忽略(id=%s)", r.ID)
+		}
+	}
+	if len(rep.Bucket.Done) != 1 {
+		t.Fatalf("已完成的应进 Done 组,实际 %d 项", len(rep.Bucket.Done))
+	}
+}

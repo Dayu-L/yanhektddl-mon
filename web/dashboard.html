@@ -89,6 +89,8 @@ button { font: inherit; }
   gap: var(--gap); align-items: start;
   margin-top: var(--gap);
 }
+/* 右轨无卡片(已完成/已忽略皆空)时收成居中单列,不留空列 */
+.grid.single { grid-template-columns: minmax(0, 860px); justify-content: center; }
 .col-main, .col-rail { display: grid; gap: var(--gap); min-width: 0; }
 
 /* ============ 卡片 ============ */
@@ -179,12 +181,6 @@ button { font: inherit; }
 /* 右轨行:标题优先,单个动作位(已忽略→恢复;已完成→无动作) */
 .col-rail .row { grid-template-columns: 1fr 92px 28px; gap: 8px; }
 .col-rail .r-date { font-size: 12px; }
-
-/* 空段保留框架 */
-.empty-line {
-  border-top: 1px solid var(--rule); padding: 12px 0 4px;
-  color: var(--muted); font-size: 13px;
-}
 
 /* ============ 页脚 ============ */
 .foot {
@@ -307,7 +303,10 @@ function rowHTML(r, opts) {
   const desc = (r.desc || "").trim();
   let actions = "";
   if (mode === "ignored") {
-    actions = '<button class="iconbtn" type="button" data-unignore="' + esc(r.key) + '" aria-label="取消忽略" title="取消忽略">' + icon("undo", 14) + "</button>";
+    // 自动忽略(已过期超 48 小时)是计算得出的,恢复了也会再被忽略,不给按钮
+    if (!r.auto) {
+      actions = '<button class="iconbtn" type="button" data-unignore="' + esc(r.key) + '" aria-label="取消忽略" title="取消忽略">' + icon("undo", 14) + "</button>";
+    }
   } else if (mode !== "done") {
     actions = (desc ? '<button class="iconbtn" type="button" data-detail aria-expanded="false" aria-label="展开任务说明" title="任务说明">' + icon("chevD", 15) + "</button>" : "")
       + '<a class="iconbtn r-open" href="' + esc(r.url) + '" target="_blank" rel="noopener" aria-label="在新标签页打开任务" title="打开任务页面">' + icon("ext", 14) + "</a>"
@@ -332,6 +331,7 @@ function rowHTML(r, opts) {
 
 function sectionHTML(id, title, rows, opts) {
   opts = opts || {};
+  if (!rows.length) return ""; // 空分组整卡隐藏,页面只保留有内容的板块
   const key = opts.key || id;   // DATA 里的键(与 DOM id 不一定相同)
   const cap = opts.cap || 0;
   const shown = cap ? rows.slice(0, cap) : rows;
@@ -341,14 +341,9 @@ function sectionHTML(id, title, rows, opts) {
     + "<h2>" + esc(title) + '</h2><span class="count">' + rows.length + " 项</span>"
     + (hidden > 0 ? '<button class="toggle" type="button" data-more="' + key + '" data-target="' + id + '">' + icon("chevrons", 12) + "展开全部</button>" : "")
     + "</div>";
-  if (rows.length === 0) {
-    html += '<p class="empty-line">' + esc(opts.empty || "暂无。") + "</p>";
-  } else {
-    html += '<div class="rows' + (opts.rowClass ? " " + opts.rowClass : "") + '">';
-    for (const r of shown) html += rowHTML(r, opts);
-    html += "</div>";
-  }
-  html += "</section>";
+  html += '<div class="rows' + (opts.rowClass ? " " + opts.rowClass : "") + '">';
+  for (const r of shown) html += rowHTML(r, opts);
+  html += "</div></section>";
   return html;
 }
 
@@ -386,20 +381,21 @@ function render() {
       + '<div><div class="hero-title" style="font-size:18px">全部任务已完成</div>'
       + '<div class="hero-meta">下次巡检发现新任务会自动出现在这里</div></div></div></section>';
   }
-  html += sectionHTML("missed", "已过期未提交", d.missed || [], { dot: true, empty: "没有过期未提交的任务。" });
-  html += sectionHTML("urgent", "3 天内截止", d.urgent || [], { empty: "3 天内没有待交任务。" });
-  html += sectionHTML("week", "7 天内截止", d.week || [], { empty: "未来 4–7 天暂无新增截止。" });
+  html += sectionHTML("missed", "已过期未提交", d.missed || [], { dot: true });
+  html += sectionHTML("urgent", "3 天内截止", d.urgent || [], {});
+  html += sectionHTML("week", "7 天内截止", d.week || [], {});
   html += sectionHTML("later", "更远期任务", d.later || [], { cap: 6 });
-  html += sectionHTML("unknown", "提交状态未知", d.unknown || [], { empty: "状态均确认。" });
+  html += sectionHTML("unknown", "提交状态未知", d.unknown || [], {});
   main.innerHTML = html;
 
-  /* 右轨:已忽略(可恢复) + 已完成 */
+  /* 右轨:已忽略(可恢复;自动忽略不可恢复) + 已完成;全空则隐藏整列 */
   let rh = sectionHTML("ignoredlist", "已忽略", d.ignored || [], {
-    rowClass: "muted-rows", mode: "ignored", cap: 6, key: "ignored",
-    empty: "没有忽略的任务。点任务行的“忽略”图标即可移出提醒。"
+    rowClass: "muted-rows", mode: "ignored", cap: 6, key: "ignored"
   });
   rh += sectionHTML("donelist", "已完成", d.done || [], { rowClass: "muted-rows", mode: "done", cap: 6, key: "done" });
   rail.innerHTML = rh;
+  rail.hidden = !rh;
+  document.querySelector(".grid").classList.toggle("single", !rh);
 
   tick();
 }

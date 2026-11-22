@@ -29,6 +29,7 @@ type jrow struct {
 	NoNeed bool   `json:"no_need"`
 	Desc   string `json:"desc"`
 	Key    string `json:"key"` // 忽略标记用:zy#id
+	Auto   bool   `json:"auto"` // 已过期超 48 小时,自动忽略(不可手动恢复)
 }
 
 func jrows(rs []*Row) []jrow {
@@ -36,7 +37,7 @@ func jrows(rs []*Row) []jrow {
 	for _, r := range rs {
 		out = append(out, jrow{r.Course, r.Kind, r.Title,
 			r.End.Format(time.RFC3339), r.Status, r.URL, r.Done, r.NoNeed, r.Full,
-			ignoreKey(r.Zy, r.ID)})
+			ignoreKey(r.Zy, r.ID), r.AutoIgnored})
 	}
 	return out
 }
