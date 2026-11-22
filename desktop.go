@@ -6,18 +6,48 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"sync"
 	"time"
 )
 
-// openWindow 用 Edge 应用窗口打开速查页(系统没装 Edge 时退回默认浏览器)
+// 速查页与登录页的 <title>(--app 窗口的窗口标题就是页面标题)
+var appWindowTitles = []string{
+	"延河课堂 DDL",
+	"登录延河课堂 · 延河课堂 DDL",
+}
+
+// 新建窗口防抖:快速连点「打开窗口」时不至于开出多个
+var (
+	openMu   sync.Mutex
+	lastOpen time.Time
+)
+
+// openWindow 显示速查窗口:已打开则切到前台,没打开才新建。
+// (系统没装 Edge 时退回默认浏览器)
 func openWindow(port int) {
+	// 已有窗口:幂等前置,无需防抖
+	if focusExistingAppWindow(appWindowTitles...) {
+		logger.Printf(">> 速查窗口已存在,已切换到前台")
+		return
+	}
+
+	openMu.Lock()
+	if time.Since(lastOpen) < 2*time.Second {
+		openMu.Unlock()
+		return // 刚发起过新建(窗口可能还没出来),忽略本次
+	}
+	lastOpen = time.Now()
+	openMu.Unlock()
+
 	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
 	if bin := findBrowserBin(); bin != "" {
 		// --app 用应用窗口(无地址栏),不影响日常浏览器
 		_ = exec.Command(bin, "--app="+url, "--window-size=1180,880").Start()
+		logger.Printf(">> 已打开速查窗口")
 		return
 	}
 	_ = exec.Command("cmd", "/c", "start", url).Start()
+	logger.Printf(">> 已用默认浏览器打开速查页")
 }
 
 // probeOurs 8765 上运行的是不是我们自己的服务(防止把别的程序误认成自己)
