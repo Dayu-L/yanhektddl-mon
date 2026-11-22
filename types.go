@@ -47,6 +47,7 @@ type Row struct {
 	Status string
 	Done   bool
 	NoNeed bool
+	Ignored bool // 用户在速查页标记“忽略”(不再提醒/统计)
 	ID     string
 	Desc   string // strip_html 后、截断 60 字(报告用)
 	Full   string // desc_to_text 后全文(速查页详情用)
@@ -62,7 +63,7 @@ type CloseInfo struct {
 }
 
 type Buckets struct {
-	Urgent, Week, Later, Missed, Done, Unknown []*Row
+	Urgent, Week, Later, Missed, Done, Unknown, Ignored []*Row
 }
 
 type Report struct {

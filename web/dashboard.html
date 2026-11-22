@@ -110,7 +110,8 @@ button { font: inherit; }
 .cardhead .count { color: var(--muted); font-size: 12px; }
 .cardhead .toggle {
   margin-left: auto; font-size: 12px; color: var(--muted);
-  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; cursor: pointer; padding: 3px 4px;
 }
 .cardhead .toggle:hover { color: var(--text); text-decoration: underline; }
 
@@ -136,7 +137,7 @@ button { font: inherit; }
 /* ============ 任务行 ============ */
 .rows { display: block; }
 .row {
-  display: grid; grid-template-columns: 1fr 122px 92px;
+  display: grid; grid-template-columns: 1fr 122px 104px;
   gap: 16px; align-items: center;
   padding: 11px 0; border-top: 1px solid var(--rule);
   cursor: pointer; border-radius: 6px;
@@ -154,43 +155,33 @@ button { font: inherit; }
 .r-when { text-align: right; }
 .r-date { font-size: 13px; }
 .r-left { color: var(--muted); font-size: 12px; margin-top: 1px; }
-.r-actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
-.r-detail-toggle {
-  background: none; border: none; cursor: pointer;
-  font-size: 13px; color: var(--muted); padding: 2px 0;
+.r-actions { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
+/* 图标按钮:行内动作(详情/打开/忽略)统一 28px 命中区 */
+.iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex: none;
+  background: none; border: none; border-radius: 6px;
+  color: var(--muted); cursor: pointer; text-decoration: none;
 }
-.r-detail-toggle:hover { color: var(--text); text-decoration: underline; }
-.r-open {
-  font-size: 13px; color: var(--muted); text-decoration: none;
-  white-space: nowrap;
-}
-.row:hover .r-open { color: var(--text); }
-.r-open:hover { text-decoration: underline; }
+.iconbtn:hover { background: var(--raised); color: var(--text); }
+.iconbtn:focus-visible { outline-offset: 0; }
 .r-detail {
   background: #f4f5f7; border-radius: 8px;
   padding: 12px 14px; margin: 2px 0 12px;
   font-size: 13px; line-height: 1.7; color: var(--text);
 }
 .r-detail + .row { border-top: none; }
-.done-rows .r-title { color: var(--muted); font-weight: 400; }
-.done-rows .row { cursor: default; }
+/* 弱化行(已完成/已忽略):标题降级 */
+.muted-rows .r-title { color: var(--muted); font-weight: 400; }
+/* 右轨行:标题优先,单个动作位(已忽略→恢复;已完成→无动作) */
+.col-rail .row { grid-template-columns: 1fr 92px 28px; gap: 8px; }
+.col-rail .r-date { font-size: 12px; }
 
 /* 空段保留框架 */
 .empty-line {
   border-top: 1px solid var(--rule); padding: 12px 0 4px;
   color: var(--muted); font-size: 13px;
 }
-
-/* ============ 右轨:课程关闭 ============ */
-.c-row {
-  display: grid; grid-template-columns: 1fr 84px 64px; gap: 8px;
-  align-items: center; padding: 8px 0; border-top: 1px solid var(--rule);
-}
-.c-rows .c-row:first-child { border-top: none; }
-.c-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c-date { color: var(--muted); font-size: 13px; text-align: right; }
-.c-left { font-size: 13px; text-align: right; }
-.c-passed .c-name, .c-passed .c-date, .c-passed .c-left { color: var(--faint); }
 
 /* ============ 页脚 ============ */
 .foot {
@@ -221,7 +212,8 @@ button { font: inherit; }
   .hero-top { align-items: flex-start; }
   .hero-count { font-size: 28px; line-height: 32px; }
   .btn-primary { width: 100%; margin-top: 14px; justify-content: center; }
-  .row { grid-template-columns: 1fr 104px 56px; }
+  /* 行点击即跳转,打开按钮隐藏;只留详情 + 忽略两个图标 */
+  .row { grid-template-columns: 1fr 104px 64px; }
   .r-open { display: none; }
   .card { padding: 16px; }
 }
@@ -241,8 +233,10 @@ button { font: inherit; }
     </div>
     <div class="stampbox">
       <span class="stamp">数据截至 <span class="num" id="stampTime">—</span></span>
-      <a class="btn-ghost" href="/settings" title="自动巡检与关闭窗口行为">设置</a>
-      <button class="btn-ghost" id="refreshBtn" type="button">刷新数据</button>
+      <a class="btn-ghost" href="/settings" title="自动巡检与关闭窗口行为">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>设置</a>
+      <button class="btn-ghost" id="refreshBtn" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>刷新数据</button>
     </div>
   </header>
 
@@ -284,12 +278,38 @@ function fmtLive(ms) {
 }
 function parseEnd(iso) { return new Date(iso); }
 
+/* ---------- 图标(内联 SVG,不依赖外网) ---------- */
+const ICON_PATHS = {
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  ext: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  chevD: '<path d="m6 9 6 6 6-6"/>',
+  chevU: '<path d="m18 15-6-6-6 6"/>',
+  chevrons: '<path d="m7 6 5 5 5-5"/><path d="m7 13 5 5 5-5"/>',
+  eyeOff: '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
+  undo: '<path d="M3 12a9 9 0 1 0 9-9c-2.52 0-4.93 1-6.74 2.74L3 8"/><path d="M3 3v5h5"/>'
+};
+const icon = (name, size) =>
+  '<svg width="' + (size || 14) + '" height="' + (size || 14) +
+  '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"' +
+  ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  ICON_PATHS[name] + "</svg>";
+
 /* ---------- 渲染 ---------- */
 let DATA = null;
 
-function rowHTML(r) {
+function rowHTML(r, opts) {
+  opts = opts || {};
+  const mode = opts.mode || ""; // "" 待办行 / "ignored" 已忽略行 / "done" 已完成行
   const end = parseEnd(r.end);
   const desc = (r.desc || "").trim();
+  let actions = "";
+  if (mode === "ignored") {
+    actions = '<button class="iconbtn" type="button" data-unignore="' + esc(r.key) + '" aria-label="取消忽略" title="取消忽略">' + icon("undo", 14) + "</button>";
+  } else if (mode !== "done") {
+    actions = (desc ? '<button class="iconbtn" type="button" data-detail aria-expanded="false" aria-label="展开任务说明" title="任务说明">' + icon("chevD", 15) + "</button>" : "")
+      + '<a class="iconbtn r-open" href="' + esc(r.url) + '" target="_blank" rel="noopener" aria-label="在新标签页打开任务" title="打开任务页面">' + icon("ext", 14) + "</a>"
+      + '<button class="iconbtn" type="button" data-ignore="' + esc(r.key) + '" aria-label="忽略此任务" title="忽略:不再提醒与统计">' + icon("eyeOff", 14) + "</button>";
+  }
   let html = '<div class="row" data-url="' + esc(r.url) + '" role="link" tabindex="0">'
     + '<div style="min-width:0">'
     + '<a class="r-title" href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.title) + '</a>'
@@ -297,10 +317,7 @@ function rowHTML(r) {
     + '</div>'
     + '<div class="r-when"><div class="r-date num">' + fmtDate(end) + '</div>'
     + '<div class="r-left num">' + fmtLeft(end - Date.now()) + '</div></div>'
-    + '<div class="r-actions">'
-    + (desc ? '<button class="r-detail-toggle" type="button" data-detail aria-expanded="false">详情</button>' : "")
-    + '<a class="r-open" href="' + esc(r.url) + '" target="_blank" rel="noopener">打开 ↗</a>'
-    + "</div>"
+    + '<div class="r-actions">' + actions + "</div>"
     + "</div>";
   if (desc) {
     const body = esc(desc.length > 800 ? desc.slice(0, 800) + "……(完整说明见作业页)" : desc)
@@ -319,13 +336,13 @@ function sectionHTML(id, title, rows, opts) {
   let html = '<section class="card" id="' + id + '"><div class="cardhead">'
     + (opts.dot ? '<span class="dot" aria-hidden="true"></span>' : "")
     + "<h2>" + esc(title) + '</h2><span class="count">' + rows.length + " 项</span>"
-    + (hidden > 0 ? '<button class="toggle" type="button" data-more="' + key + '" data-target="' + id + '">展开全部</button>' : "")
+    + (hidden > 0 ? '<button class="toggle" type="button" data-more="' + key + '" data-target="' + id + '">' + icon("chevrons", 12) + "展开全部</button>" : "")
     + "</div>";
   if (rows.length === 0) {
     html += '<p class="empty-line">' + esc(opts.empty || "暂无。") + "</p>";
   } else {
-    html += '<div class="rows"' + (opts.grey ? ' style="color:var(--muted)"' : "") + ">";
-    for (const r of shown) html += rowHTML(r);
+    html += '<div class="rows' + (opts.rowClass ? " " + opts.rowClass : "") + '">';
+    for (const r of shown) html += rowHTML(r, opts);
     html += "</div>";
   }
   html += "</section>";
@@ -361,7 +378,7 @@ function render() {
       + '<a class="hero-title" href="' + esc(hero.url) + '" target="_blank" rel="noopener">' + esc(hero.title) + "</a>"
       + '<div class="hero-meta">' + esc(hero.course) + " · " + esc(hero.kind) + " · 截止 " + fmtDate(end) + "</div>"
       + "</div>"
-      + '<a class="btn-primary" href="' + esc(hero.url) + '" target="_blank" rel="noopener">去完成 →</a>'
+      + '<a class="btn-primary" href="' + esc(hero.url) + '" target="_blank" rel="noopener">去完成 ' + icon("arrow", 15) + "</a>"
       + "</div>";
     if (urgentOthers > 0) html += '<div class="hero-note">另有 ' + urgentOthers + ' 项也在 3 天内截止,见下方列表</div>';
     html += "</section>";
@@ -377,14 +394,12 @@ function render() {
   html += sectionHTML("unknown", "提交状态未知", d.unknown || [], { empty: "状态均确认。" });
   main.innerHTML = html;
 
-  /* 右轨 */
-  let rh = '<section class="card" id="closes"><div class="cardhead"><h2>课程开放截止</h2>'
-    + '<span class="count">' + (d.closes || []).length + " 门</span>"
-    + "</div>";
-  rh += '<div class="c-rows">';
-  (d.closes || []).forEach(c => { rh += cRowHTML(c); });
-  rh += "</div></section>";
-  rh += sectionHTML("donelist", "已完成", d.done || [], { cap: 6, grey: true, key: "done" });
+  /* 右轨:已忽略(可恢复) + 已完成 */
+  let rh = sectionHTML("ignoredlist", "已忽略", d.ignored || [], {
+    rowClass: "muted-rows", mode: "ignored", cap: 6, key: "ignored",
+    empty: "没有忽略的任务。点任务行的“忽略”图标即可移出提醒。"
+  });
+  rh += sectionHTML("donelist", "已完成", d.done || [], { rowClass: "muted-rows", mode: "done", cap: 6, key: "done" });
   rail.innerHTML = rh;
 
   tick();
@@ -402,31 +417,35 @@ function tick() {
 }
 setInterval(tick, 1000);
 
-function cRowHTML(c) {
-  return '<div class="c-row' + (c.passed ? " c-passed" : "") + '">'
-    + '<div class="c-name">' + esc(c.title) + "</div>"
-    + '<div class="c-date num">' + fmtDate(parseEnd(c.end)) + "</div>"
-    + '<div class="c-left num">' + (c.passed ? "已关闭" : esc(c.left)) + "</div></div>";
-}
-
 function expandMore(btn) {
   const key = btn.dataset.more;
   const all = DATA && DATA[key];
   const keep = document.getElementById(btn.dataset.target || key);
   if (!all || !keep) return;
-  if (key === "closes") {
-    const box = keep.querySelector(".c-rows");
-    if (box) box.innerHTML = all.map(cRowHTML).join("");
-  } else {
-    const rowsEl = keep.querySelector(".rows");
-    if (rowsEl) rowsEl.innerHTML = all.map(rowHTML).join("");
-    const count = keep.querySelector(".count");
-    if (count) count.textContent = all.length + " 项";
-  }
+  const mode = key === "ignored" ? "ignored" : key === "done" ? "done" : "";
+  const rowsEl = keep.querySelector(".rows");
+  if (rowsEl) rowsEl.innerHTML = all.map(r => rowHTML(r, { mode: mode })).join("");
+  const count = keep.querySelector(".count");
+  if (count) count.textContent = all.length + " 项";
   btn.remove();
 }
 
-/* 事件委托:行点击、回车跳转、展开/详情按钮 —— DOM 重建后依然生效,无需重绑 */
+/* ---------- 忽略 / 恢复 ---------- */
+async function postIgnore(key, ignored) {
+  try {
+    const res = await fetch("/api/ignore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: key, ignored: ignored })
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    await load(); // 重新拉数据并渲染,分组计数即时更新
+  } catch (e) {
+    $("#finding").textContent = "忽略状态保存失败,请稍后重试。";
+  }
+}
+
+/* 事件委托:行点击、回车跳转、展开/详情/忽略按钮 —— DOM 重建后依然生效,无需重绑 */
 function toggleDetail(btn) {
   const row = btn.closest(".row");
   const panel = row && row.nextElementSibling;
@@ -434,16 +453,22 @@ function toggleDetail(btn) {
   const open = !panel.hidden;
   panel.hidden = open;
   btn.setAttribute("aria-expanded", String(!open));
-  btn.textContent = open ? "详情" : "收起";
+  btn.setAttribute("aria-label", open ? "展开任务说明" : "收起任务说明");
+  btn.innerHTML = icon(open ? "chevD" : "chevU", 15);
 }
 
 document.addEventListener("click", e => {
+  const ig = e.target.closest("[data-ignore]");
+  if (ig) { postIgnore(ig.dataset.ignore, true); return; }
+  const un = e.target.closest("[data-unignore]");
+  if (un) { postIgnore(un.dataset.unignore, false); return; }
   const btn = e.target.closest("[data-more]");
   if (btn) { expandMore(btn); return; }
   const det = e.target.closest("[data-detail]");
   if (det) { toggleDetail(det); return; }
   const row = e.target.closest(".row");
-  if (row && !e.target.closest("a")) window.open(row.dataset.url, "_blank", "noopener");
+  if (row && !e.target.closest("a") && !e.target.closest("button"))
+    window.open(row.dataset.url, "_blank", "noopener");
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.classList && e.target.classList.contains("row"))
@@ -464,6 +489,7 @@ async function load() {
 }
 
 const refreshBtn = $("#refreshBtn");
+const refreshLabel = refreshBtn.innerHTML; // 含刷新图标
 refreshBtn.addEventListener("click", async () => {
   refreshBtn.disabled = true;
   refreshBtn.innerHTML = '<span class="spin" aria-hidden="true"></span>抓取中…';
@@ -480,7 +506,7 @@ refreshBtn.addEventListener("click", async () => {
     $("#finding").textContent = "刷新失败,请稍后点[刷新数据]重试。";
   }
   refreshBtn.disabled = false;
-  refreshBtn.textContent = "刷新数据";
+  refreshBtn.innerHTML = refreshLabel;
 });
 
 // 窗口存活探测:服务凭所有窗口的这条长连接判断"还有人在用";

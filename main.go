@@ -16,7 +16,7 @@ var dashboardHTML string
 
 // 版本号:默认值与 installer.iss/build-installer.ps1 保持一致,
 // 官方构建经 -ldflags "-X main.version=<版本>" 注入
-var version = "0.4.1"
+var version = "0.5.0"
 
 // preprocessArgs 把裸的 --from-json 补成 --from-json=(即“使用默认快照路径”),
 // 以保持与旧版 `--from-json [路径]` 兼容。
@@ -156,7 +156,7 @@ func fetchOnce(days int, visible, withNotify bool) bool {
 	if submitted == nil {
 		submitted = map[string][]interface{}{}
 	}
-	rep := buildReport(snap.Courses, snap.Items, submitted, days)
+	rep := buildReport(snap.Courses, snap.Items, submitted, days, loadIgnored())
 	writeReports(rep, days)
 	printSummary(rep, days)
 
@@ -185,7 +185,7 @@ func reportFromSnapshot(path string, days int) bool {
 	if submitted == nil {
 		submitted = map[string][]interface{}{}
 	}
-	rep := buildReport(snap.Courses, snap.Items, submitted, days)
+	rep := buildReport(snap.Courses, snap.Items, submitted, days, loadIgnored())
 	writeReports(rep, days)
 	printSummary(rep, days)
 	return !hasUrgent(rep)

@@ -108,8 +108,10 @@ func truncate(s string, n int) string {
 
 // ---------------------------------------------------------------- 报告构建
 
-// buildReport 对应 python build_report:统一计算排序、分组、课程关闭时间
-func buildReport(courses []Course, items []Item, submitted map[string][]interface{}, urgentDays int) *Report {
+// buildReport 对应 python build_report:统一计算排序、分组、课程关闭时间。
+// ignored 为用户标记的忽略清单(key 见 ignoreKey):被忽略且未完成的任务
+// 单独归入 Bucket.Ignored,不进入临期/漏交分组,不触发通知。
+func buildReport(courses []Course, items []Item, submitted map[string][]interface{}, urgentDays int, ignored map[string]bool) *Report {
 	now := time.Now().In(TZ)
 	courseByZy := map[string]Course{}
 	for _, c := range courses {
@@ -174,6 +176,7 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 			Done:   done,
 			Status: status,
 			NoNeed: noNeed,
+			Ignored: ignored[ignoreKey(it.Zy, idString(it.ID))],
 			ID:     idString(it.ID),
 			Desc:   truncate(desc, 60),
 			Full:   descToText(it.Desc),
@@ -189,6 +192,12 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 	for _, r := range rep.Rows {
 		if r.Done {
 			rep.Bucket.Done = append(rep.Bucket.Done, r)
+		}
+		// 已忽略且未完成:单独成组,不参与临期/漏交/未知统计
+		// (已完成的任务“忽略”无意义,照常进已完成组)
+		if r.Ignored && !r.Done {
+			rep.Bucket.Ignored = append(rep.Bucket.Ignored, r)
+			continue
 		}
 		if r.Done || r.NoNeed {
 			continue // pending = 未完成且无需提交标记
@@ -249,14 +258,22 @@ func writeReports(rep *Report, urgentDays int) {
 	L = append(L, "# 📌 延河课堂 / 乐学 DDL 监控报告\n")
 	L = append(L, fmt.Sprintf("> 生成时间:%s (北京时间)  ", now.Format("2006-01-02 15:04:05")))
 	unfinished := 0
+	ignoredCount := 0
 	for _, r := range rep.Rows {
 		if r.Status == "未完成" || r.Status == "未知" {
-			unfinished++
+			if r.Ignored {
+				ignoredCount++
+			} else {
+				unfinished++
+			}
 		}
 	}
 	doneCount := len(rep.Bucket.Done)
 	L = append(L, fmt.Sprintf("> 任务总数:%d | 未完成:%d | 已完成:%d | 已过期未提交:%d\n\n",
 		len(rep.Rows), unfinished, doneCount, len(rep.Bucket.Missed)))
+	if ignoredCount > 0 {
+		L = append(L, fmt.Sprintf("> 已忽略 %d 项(不再提醒,速查页可恢复)\n\n", ignoredCount))
+	}
 
 	if len(rep.Bucket.Urgent) > 0 {
 		L = append(L, fmt.Sprintf("\n## 🔥 %d 天内截止且未完成(尽快处理!)\n\n", urgentDays))
@@ -319,8 +336,13 @@ func writeReports(rep *Report, urgentDays int) {
 		"剩余/状态", "提交状态", "备注", "链接"})
 	for _, r := range rep.Rows {
 		note := r.Desc
-		if r.NoNeed {
+		switch {
+		case r.NoNeed && r.Ignored:
+			note = "无需提交(练习);已忽略"
+		case r.NoNeed:
 			note = "无需提交(练习)"
+		case r.Ignored:
+			note = "已忽略(不再提醒)"
 		}
 		w.Write([]string{"任务", r.Course, r.Title, r.Kind,
 			r.End.Format("2006-01-02 15:04:05"),

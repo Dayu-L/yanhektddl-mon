@@ -28,13 +28,15 @@ type jrow struct {
 	Done   bool   `json:"done"`
 	NoNeed bool   `json:"no_need"`
 	Desc   string `json:"desc"`
+	Key    string `json:"key"` // 忽略标记用:zy#id
 }
 
 func jrows(rs []*Row) []jrow {
 	out := make([]jrow, 0, len(rs))
 	for _, r := range rs {
 		out = append(out, jrow{r.Course, r.Kind, r.Title,
-			r.End.Format(time.RFC3339), r.Status, r.URL, r.Done, r.NoNeed, r.Full})
+			r.End.Format(time.RFC3339), r.Status, r.URL, r.Done, r.NoNeed, r.Full,
+			ignoreKey(r.Zy, r.ID)})
 	}
 	return out
 }
@@ -47,22 +49,15 @@ func apiData() (map[string]interface{}, error) {
 			"fetched_at": nil,
 			"missed":     []jrow{}, "urgent": []jrow{}, "week": []jrow{},
 			"later": []jrow{}, "unknown": []jrow{}, "done": []jrow{},
-			"closes": []interface{}{},
+			"ignored": []jrow{},
 		}, nil
 	}
 	submitted := snap.SubmittedExams
 	if submitted == nil {
 		submitted = map[string][]interface{}{}
 	}
-	rep := buildReport(snap.Courses, snap.Items, submitted, 3)
+	rep := buildReport(snap.Courses, snap.Items, submitted, 3, loadIgnored())
 
-	closes := make([]map[string]interface{}, 0, len(rep.Closes))
-	for _, c := range rep.Closes {
-		closes = append(closes, map[string]interface{}{
-			"title": c.Title, "college": c.College,
-			"end": c.End.Format(time.RFC3339), "left": c.Left, "passed": c.Passed,
-		})
-	}
 	return map[string]interface{}{
 		"fetched_at": snap.FetchedAt,
 		"missed":     jrows(rep.Bucket.Missed),
@@ -71,7 +66,7 @@ func apiData() (map[string]interface{}, error) {
 		"later":      jrows(rep.Bucket.Later),
 		"unknown":    jrows(rep.Bucket.Unknown),
 		"done":       jrows(rep.Bucket.Done),
-		"closes":     closes,
+		"ignored":    jrows(rep.Bucket.Ignored),
 	}, nil
 }
 
@@ -134,7 +129,7 @@ func runRefresh(days int) {
 	if submitted == nil {
 		submitted = map[string][]interface{}{}
 	}
-	rep := buildReport(snap.Courses, snap.Items, submitted, days)
+	rep := buildReport(snap.Courses, snap.Items, submitted, days, loadIgnored())
 	writeReports(rep, days)
 	logger.Printf("[刷新] 完成:%d 门课 %d 条任务", len(snap.Courses), len(snap.Items))
 }
@@ -242,6 +237,26 @@ func newMux(port int) http.Handler {
 			return
 		}
 		go runRefresh(3)
+		sendJSON(w, 200, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("/api/ignore", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			sendText(w, 404, "not found")
+			return
+		}
+		var in struct {
+			Key     string `json:"key"`
+			Ignored bool   `json:"ignored"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			sendJSON(w, 400, map[string]string{"error": "请求格式错误"})
+			return
+		}
+		if err := setIgnored(in.Key, in.Ignored); err != nil {
+			sendJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		logger.Printf("[忽略] %s -> %v", in.Key, in.Ignored)
 		sendJSON(w, 200, map[string]bool{"ok": true})
 	})
 	// 窗口存活探测:页面 EventSource 长连接,全部断开 -> 服务自动退出
