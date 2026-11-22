@@ -54,3 +54,26 @@ func TestReopenSequence(t *testing.T) {
 	defer s2.close()
 	time.Sleep(500 * time.Millisecond)
 }
+
+// 验证 WebSocket 回退传输可用(旧版 Edge/Chrome、受限环境用这条路径)。
+func TestBrowserWebSocketTransport(t *testing.T) {
+	preferWebSocket.Store(true)
+	defer preferWebSocket.Store(false)
+
+	s, err := openBrowser(false)
+	if err != nil {
+		t.Fatalf("WebSocket 传输启动失败:%v", err)
+	}
+	defer s.close()
+
+	if err := s.navigate("about:blank", 0); err != nil {
+		t.Fatalf("导航失败:%v", err)
+	}
+	out, err := s.eval("(() => 'ws-ok')()")
+	if err != nil {
+		t.Fatalf("执行 JS 失败:%v", err)
+	}
+	if out != "ws-ok" {
+		t.Fatalf("JS 返回值异常:%q", out)
+	}
+}

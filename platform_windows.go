@@ -7,7 +7,7 @@ package main
 // 非 Windows 的对应实现见 platform_other.go。
 
 import (
-	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -45,15 +45,17 @@ func hiddenWindow(cmd *exec.Cmd) {
 
 // killStaleBrowsers 清理上次异常退出后残留的抓取浏览器(占着 profile 锁会导致启动失败)。
 // 只杀命令行里携带本程序 browser_profile 路径的进程,不影响用户日常使用的 Edge/Chrome。
+//
+// profile 路径通过环境变量传入,避免用户名含引号/方括号时 PowerShell
+// 字符串拼接出错导致清理静默失效。
 func killStaleBrowsers() {
-	ps := fmt.Sprintf(
-		`Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" |`+
-			` Where-Object { $_.CommandLine -like '*%s*' } |`+
-			` ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
-		profileDir)
+	const ps = `Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" |` +
+		` Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:YANHEKT_PROFILE) } |` +
+		` ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", ps)
+	cmd.Env = append(os.Environ(), "YANHEKT_PROFILE="+profileDir)
 	hiddenWindow(cmd)
-	_ = cmd.Run() // 查不到就是空操作,失败也不阻塞抓取
+	_ = cmd.Run() // 查不到就是空操作;PowerShell 不可用也不阻塞抓取
 }
 
 var (

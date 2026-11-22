@@ -105,6 +105,11 @@ function setStatus(text, cls) {
   statusEl.className = "status " + (cls || "");
 }
 
+// 错误里可能带浏览器 stderr(含 <、>、引号与换行),按纯文本转义后再排版
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
 btn.addEventListener("click", startLogin);
 
 async function startLogin() {
@@ -139,8 +144,10 @@ function poll() {
       btn.disabled = false;
       btn.addEventListener("click", () => { location.href = "/"; }, { once: true });
     } else {
-      setStatus("✗ 没有完成登录:" + (st.error || "未知原因") +
-                "<br>常见原因:验证码输错、网络中断、浏览器窗口被关闭。可以再试一次。", "err");
+      setStatus("✗ 没有完成登录:" + esc(st.error || "未知原因").replace(/\r?\n/g, "<br>") +
+                "<br>常见原因:验证码输错、网络中断、浏览器窗口被关闭。可以再试一次。" +
+                "<br>若多次重试仍失败,可右键托盘图标「退出」后重新打开程序;" +
+                "仍不行请把程序目录下的 <b>server.log</b> 发给开发者。", "err");
       btn.textContent = "重试";
       btn.disabled = false;
     }

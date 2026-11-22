@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 )
 
 var errNotLoggedIn = errors.New("未登录")
@@ -19,24 +22,79 @@ const (
 	navSettle  = 2 * time.Second  // 页面跳转后的稳定等待(与旧版一致)
 	eclassWait = 3 * time.Second  // eclass SSO 跳转等待
 	actionTO   = 60 * time.Second // 单次导航/脚本执行上限
+	bootTO     = 30 * time.Second // 浏览器启动(管道模式之外的握手)上限
+	pipeBootTO = 12 * time.Second // 管道模式首次尝试上限:旧版浏览器不认 Windows 管道参数,尽快回退
 )
+
+// preferWebSocket 记录本次运行是否已回退到 WebSocket 传输。
+//
+// chromedp 0.24 在 Windows 默认用管道(--remote-debugging-io-pipes),这个
+// 开关只有较新的 Chromium 才支持;旧版 Edge/Chrome、被组策略管控或
+// 以管理员身份运行时,管道可能直接失败(“chrome failed to start”且
+// stderr 为空)。一旦管道失败就改走 WebSocket(--remote-debugging-port=0),
+// 这是 Chromium 十几年都稳定的方式,后续启动不再重试管道。
+var preferWebSocket atomic.Bool
 
 // ---------------------------------------------------------------- 浏览器会话
 
-func findBrowserBin() string {
-	candidates := []string{
+// browserCandidates 按优先级列出系统里可能存在的 Edge / Chrome。
+// 用环境变量拼路径,兼容装在非 C 盘、以及“仅当前用户”安装(Chrome 默认
+// 就是装到 %LOCALAPPDATA%,不少同学的机器上 Program Files 里没有)。
+func browserCandidates() []string {
+	var out []string
+	for _, env := range []string{"ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"} {
+		root := os.Getenv(env)
+		if root == "" {
+			continue
+		}
+		out = append(out,
+			filepath.Join(root, "Microsoft", "Edge", "Application", "msedge.exe"),
+			filepath.Join(root, "Google", "Chrome", "Application", "chrome.exe"))
+	}
+	return append(out,
 		`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
 		`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
 		`C:\Program Files\Google\Chrome\Application\chrome.exe`,
 		`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
-		`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
-	}
-	for _, p := range candidates {
+	)
+}
+
+func findBrowserBin() string {
+	seen := map[string]bool{}
+	for _, p := range browserCandidates() {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}
 	return ""
+}
+
+// ensureProfileDir 确保浏览器配置目录存在且可写。
+// 便携版若被放进 Program Files 等只读位置,Edge 无法建 profile,
+// 会以“chrome failed to start”退出;此时自动改用 %LOCALAPPDATA% 下的目录。
+func ensureProfileDir() error {
+	if err := os.MkdirAll(profileDir, 0o755); err == nil {
+		probe := filepath.Join(profileDir, ".write-test")
+		if os.WriteFile(probe, []byte("ok"), 0o644) == nil {
+			os.Remove(probe)
+			return nil
+		}
+	}
+	local := os.Getenv("LOCALAPPDATA")
+	if local == "" {
+		return fmt.Errorf("配置目录不可写:%s", profileDir)
+	}
+	alt := filepath.Join(local, "YanhektDDL", "browser_profile")
+	if err := os.MkdirAll(alt, 0o755); err != nil {
+		return fmt.Errorf("配置目录不可写:%s", profileDir)
+	}
+	logger.Printf("[浏览器] 配置目录 %s 不可写,改用 %s", profileDir, alt)
+	profileDir = alt
+	return nil
 }
 
 // browserSession 一个受控的 Edge/Chrome 实例(独立 profile,不影响日常浏览器)。
@@ -53,30 +111,50 @@ type browserSession struct {
 
 // openBrowser 启动持久化浏览器;visible=true 时显示窗口(供人工登录)。
 // 启动失败("chrome failed to start",典型原因是上次强杀宿主遗留的孤儿 Edge
-// 占着 profile 锁)时自动清锁重试,让登录向导具备自愈能力。
+// 占着 profile 锁,或刚关掉的 headless 实例还没释放锁)时自动清锁重试。
+// 慢机器/杀软扫描 profile 目录时首次退出可能滞后数秒,故退避重试总计约 10 秒。
 func openBrowser(visible bool) (*browserSession, error) {
 	var s *browserSession
 	var err error
-	for attempt := 1; attempt <= 3; attempt++ {
+	retryDelays := []time.Duration{2 * time.Second, 3 * time.Second, 5 * time.Second}
+	for attempt := 1; ; attempt++ {
 		killStaleBrowsers() // 清掉强杀宿主后遗留的孤儿 Edge(占着 profile 锁)
-		s, err = tryOpenBrowser(visible)
+		// 第 1 次走管道(不占端口);失败后本次运行固定走 WebSocket。
+		ws := preferWebSocket.Load() || attempt > 1
+		timeout := bootTO
+		if !ws {
+			timeout = pipeBootTO
+		}
+		s, err = tryOpenBrowser(visible, ws, timeout)
 		if err == nil {
+			if ws && !preferWebSocket.Swap(true) {
+				logger.Printf("[浏览器] 管道传输不可用,已切换到 WebSocket 传输")
+			}
 			return s, nil
 		}
-		if attempt == 3 {
-			break
+		if attempt > len(retryDelays) {
+			return nil, err
 		}
-		logger.Printf("[浏览器] 第 %d 次启动失败:%v;清理残留后重试", attempt, err)
-		time.Sleep(1500 * time.Millisecond)
+		delay := retryDelays[attempt-1]
+		logger.Printf("[浏览器] 第 %d 次启动失败:%v;%.0f 秒后清理残留并重试",
+			attempt, err, delay.Seconds())
+		time.Sleep(delay)
 	}
-	return nil, err
 }
 
-func tryOpenBrowser(visible bool) (*browserSession, error) {
+func tryOpenBrowser(visible, ws bool, timeout time.Duration) (*browserSession, error) {
 	bin := findBrowserBin()
 	if bin == "" {
-		return nil, errors.New("未找到 Microsoft Edge / Chrome,无法启动抓取浏览器")
+		return nil, errors.New("未找到 Microsoft Edge / Chrome,无法启动抓取浏览器(请安装 Edge 后重试)")
 	}
+	if err := ensureProfileDir(); err != nil {
+		return nil, err
+	}
+	transport := "管道"
+	if ws {
+		transport = "WebSocket"
+	}
+	logger.Printf("[浏览器] 启动 %s(可见=%v,%s,配置=%s)", bin, visible, transport, profileDir)
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(bin),
 		chromedp.UserDataDir(profileDir),
@@ -87,6 +165,14 @@ func tryOpenBrowser(visible bool) (*browserSession, error) {
 		// 在杀软眼里是恶意软件常用特征。抓取走的是已登录会话内的普通
 		// fetch,平台并不检查 navigator.webdriver,无需伪装。
 	)
+	if ws {
+		// WebSocket 传输:兼容老版 Chromium。端口固定随机并只绑本机。
+		opts = append(opts,
+			remote.WebSocket,
+			chromedp.Flag("remote-debugging-port", "0"),
+			chromedp.Flag("remote-debugging-address", "127.0.0.1"),
+		)
+	}
 	if visible {
 		// 移除 headless / enable-automation 等,窗口行为与手动打开一致
 		opts = append(opts, chromedp.VisibleWindow)
@@ -96,11 +182,23 @@ func tryOpenBrowser(visible bool) (*browserSession, error) {
 
 	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
 	tab, cancelTab := chromedp.NewContext(alloc)
-	// 第一次 Run 才真正拉起浏览器;注意不要带超时的 ctx 来做这件事
-	if err := chromedp.Do(tab); err != nil {
+	// 第一次 Run 才真正拉起浏览器。加超时:某些被管控的机器会“进程活着但
+	// 不响应 CDP”,没有超时的话登录页会一直转圈。
+	done := make(chan error, 1)
+	go func() { done <- chromedp.Do(tab) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			cancelTab()
+			cancelAlloc()
+			return nil, fmt.Errorf("启动 %s 失败(%s,配置目录 %s):%w",
+				filepath.Base(bin), transport, profileDir, err)
+		}
+	case <-time.After(timeout):
 		cancelTab()
 		cancelAlloc()
-		return nil, err
+		return nil, fmt.Errorf("启动 %s 超时(%s 内未响应,%s,配置目录 %s)",
+			filepath.Base(bin), timeout, transport, profileDir)
 	}
 	return &browserSession{allocCtx: alloc, cancelAlloc: cancelAlloc,
 		tab: tab, cancelTab: cancelTab}, nil
@@ -259,24 +357,56 @@ func tryCollect(s *browserSession) (*collectResult, error) {
 
 // collectSnapshot 完整抓取一次并保存 ddl_data.json;需要时自动弹 Edge 登录窗。
 func collectSnapshot(days int, visible bool) (*Snapshot, error) {
-	// visible 仅供 --fetch --visible 调试:直接以可见窗口抓取
+	return collectSnapshotMode(visible, false)
+}
+
+// collectSnapshotForLogin 登录向导专用:直接以可见窗口进入“等用户登录”流程。
+//
+// 不再先起 headless 探测登录态再关掉重开:Edge 退出是异步的,重开的可见
+// 实例会撞上尚未释放的 profile 锁,浏览器静默移交后立刻退出,最终报
+// "chrome failed to start"(stderr 为空)。慢机器/杀软实时扫描时这个
+// 竞态窗口会放大,于是“开发机正常、别人电脑秒失败”。
+func collectSnapshotForLogin() (*Snapshot, error) {
+	return collectSnapshotMode(true, true)
+}
+
+func collectSnapshotMode(visible, forceLogin bool) (*Snapshot, error) {
 	s, err := openBrowser(visible)
 	if err != nil {
 		return nil, err
 	}
-	defer s.close()
+	// 用闭包读取最终的 s:中途换窗口后只关掉最后那个会话。
+	defer func() {
+		if s != nil {
+			s.close()
+		}
+	}()
+
+	if forceLogin {
+		if !waitLogin(s, loginWait) {
+			return nil, errors.New("等待登录超时,未获取到有效会话")
+		}
+		res, err := tryCollect(s)
+		if err == errNotLoggedIn {
+			return nil, errors.New("登录后仍未获取到有效会话,请检查账号")
+		}
+		if err != nil {
+			return nil, err
+		}
+		return saveCollected(res)
+	}
 
 	res, err := tryCollect(s)
 	if err == errNotLoggedIn && !visible { // 需要人工登录 -> 换可见窗口
 		s.close()
-		// headless Edge 的终止是异步的:立即重开可见窗口会撞上 profile 锁,
-		// Edge 静默移交后瞬间退出 -> "chrome failed to start"
-		time.Sleep(time.Second)
+		s = nil
+		// 留足时间让 Edge 释放 profile 锁;再加上 openBrowser 内部约 10 秒
+		// 退避重试,慢机器也能自愈。
+		time.Sleep(2 * time.Second)
 		s, err = openBrowser(true)
 		if err != nil {
 			return nil, err
 		}
-		defer s.close()
 		if !waitLogin(s, loginWait) {
 			return nil, errors.New("等待登录超时,未获取到有效会话")
 		}
@@ -288,7 +418,11 @@ func collectSnapshot(days int, visible bool) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
+	return saveCollected(res)
+}
 
+// saveCollected 把抓取结果落盘成快照,供报告与速查页共用。
+func saveCollected(res *collectResult) (*Snapshot, error) {
 	snap := &Snapshot{
 		FetchedAt:      time.Now().In(TZ).Format(time.RFC3339),
 		Courses:        res.Courses,

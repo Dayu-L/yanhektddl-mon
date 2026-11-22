@@ -42,8 +42,8 @@ func loginBusy() bool {
 }
 
 // runLogin 弹出可见浏览器等待用户登录(含验证码),成功后抓取并保存快照。
-// 与首次/失效重登共用同一入口:collectSnapshot 检测到未登录时会自动
-// 切换到可见窗口并等待人工登录。
+// 走 collectSnapshotForLogin:直接开可见窗口,不做 headless 探测,
+// 从根上避开“关掉 headless 再开可见窗口”的 profile 锁竞态。
 func runLogin() {
 	loginSt.mu.Lock()
 	if loginSt.running {
@@ -56,7 +56,7 @@ func runLogin() {
 	loginSt.mu.Unlock()
 
 	logger.Printf("[登录] 开始登录流程…")
-	snap, err := collectSnapshot(3, false)
+	snap, err := collectSnapshotForLogin()
 
 	loginSt.mu.Lock()
 	loginSt.running = false

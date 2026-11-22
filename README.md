@@ -32,7 +32,7 @@
 | 需要 | 说明 |
 |---|---|
 | Windows 10 / 11 | 64 位 |
-| Microsoft Edge | 系统自带,无需额外安装(缺 Edge 时自动尝试 Chrome) |
+| Microsoft Edge | 系统自带,无需额外安装(缺 Edge 时自动尝试 Chrome;旧版 Edge 会自动回退到 WebSocket 传输) |
 | 能访问校园平台 | 校园网 / VPN 环境下使用 |
 
 **不再需要 Python。** 旧版 Python 实现(Playwright 方案)完整保留在
@@ -101,6 +101,15 @@
 
 **Q:抓取失败?**
 确认能在浏览器手动登录延河课堂;确认校园网/VPN 已连;然后点「刷新数据」重试。
+
+**Q:提示 `chrome failed to start`?**
+说明程序找到了 Edge/Chrome,但抓取用的浏览器实例没起来。常见原因是上一次
+抓取进程没退干净占着 `browser_profile` 锁,或浏览器版本较旧。程序会自动清锁
+并退避重试,较旧浏览器会自动切换到 WebSocket 传输;仍失败时:
+
+1. 点页面上的「重试」
+2. 右键系统托盘图标「退出」后重新打开程序
+3. 仍不行,把程序目录下的 `server.log` 发给开发者(里面有浏览器路径与完整报错)
 
 **Q:数据存在哪?在本机怎么删?**
 全部在程序目录:`browser_profile\`(登录会话)、`ddl_data.json`(数据)、
@@ -185,7 +194,9 @@ yanhektddl-mon/
 ## 工作原理
 
 1. **抓取**:exe 通过 CDP(chromedp 库)启动一个独立的持久化 Edge 会话,
-   会话保存在 `browser_profile/`,不影响日常使用的浏览器。
+   会话保存在 `browser_profile/`,不影响日常使用的浏览器。默认走管道传输;
+   若浏览器版本较旧或被策略限制导致管道不可用,自动回退到
+   `--remote-debugging-port=0` 的 WebSocket 传输(仅绑定 127.0.0.1)。
 2. 在已登录的会话内调用平台官方接口:
    - 延河课堂课程列表 → 课程 `zhiyuan_id` 与课程关闭时间
    - eclass 作业 / 考试 / 问卷接口 → 任务与截止时间
@@ -220,7 +231,7 @@ go test -run TestBrowserSmoke -v .
 
 # 构建 Windows 安装包(需 Inno Setup,缺失时自动经 winget 安装)
 ./installer/build-installer.ps1            # 产出 dist/yanhektddl-setup-<版本>.exe
-./installer/build-installer.ps1 -Version 0.3.1
+./installer/build-installer.ps1 -Version 0.3.2
 ```
 
 开发期也可以 `go run .` 代替构建(数据目录会自动落到工作目录)。
