@@ -45,4 +45,13 @@ ico_path = os.path.join(ASSETS, "app.ico")
 imgs[-1].save(ico_path, sizes=[(s, s) for s in sizes])
 # 另存 256 PNG 供各页面 favicon/预览
 imgs[-1].save(os.path.join(ASSETS, "app.png"))
+
+# 托盘专用 PNG:覆盖常见缩放档位(100%..400%),运行时按 SM_CXSMICON
+# 选档替换托盘图标,避免 energye/systray 固定按 SM_CXICON 加载导致的
+# 高 DPI 双重重采样发糊。每一档都用矢量管线独立绘制,不是互相缩放。
+tray_dir = os.path.join(ASSETS, "tray")
+os.makedirs(tray_dir, exist_ok=True)
+for s in (16, 20, 24, 28, 32, 40, 48, 64, 80, 96, 128):
+    draw_icon(s).save(os.path.join(tray_dir, "tray_%d.png" % s))
 print("app.ico 已生成:", ico_path, sizes)
+print("tray PNG 已生成:", tray_dir)

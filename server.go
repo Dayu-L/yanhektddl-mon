@@ -15,6 +15,9 @@ import (
 //go:embed assets/app.ico
 var faviconIco []byte
 
+//go:embed assets/app.png
+var faviconPNG []byte
+
 // ---------------------------------------------------------------- 速查页数据
 // 把 ddl_data.json 变成 dashboard.html 使用的 JSON(对应 python snapshot())
 
@@ -28,7 +31,7 @@ type jrow struct {
 	Done   bool   `json:"done"`
 	NoNeed bool   `json:"no_need"`
 	Desc   string `json:"desc"`
-	Key    string `json:"key"` // 忽略标记用:zy#id
+	Key    string `json:"key"`  // 忽略标记用:zy#id
 	Auto   bool   `json:"auto"` // 已过期超 48 小时,自动忽略(不可手动恢复)
 }
 
@@ -50,7 +53,7 @@ func apiData() (map[string]interface{}, error) {
 			"fetched_at": nil,
 			"missed":     []jrow{}, "urgent": []jrow{}, "week": []jrow{},
 			"later": []jrow{}, "unknown": []jrow{}, "done": []jrow{},
-			"ignored": []jrow{},
+			"ignored":      []jrow{},
 			"course_count": 0, "item_count": 0,
 		}, nil
 	}
@@ -192,6 +195,14 @@ func newMux(port int) http.Handler {
 		w.Header().Set("Content-Type", "image/x-icon")
 		w.Header().Set("Cache-Control", "max-age=86400")
 		w.Write(faviconIco)
+	})
+	// 256px PNG 图标:同时供 <link rel=icon sizes=256> 使用。
+	// Edge --app 窗口的任务栏按钮图标取自站点 favicon,声明大尺寸 PNG
+	// 可让 Chromium 用它做光栅化源,避免任务栏图标发糊。
+	mux.HandleFunc("/icon256.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "max-age=86400")
+		w.Write(faviconPNG)
 	})
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

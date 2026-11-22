@@ -31,3 +31,9 @@ func acquireSingleInstance() bool { return true }
 func focusExistingAppWindow(titles ...string) bool { return false }
 
 func closeAppWindows(titles ...string) int { return 0 }
+
+// 非 Windows 平台无 energye/systray 托盘,无需替换图标
+func fixTrayIcon() {}
+
+// 非 Windows 平台没有 Edge 应用窗口图标问题
+func applyWindowIconSoon(titles ...string) {}

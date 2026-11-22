@@ -14,7 +14,7 @@ import (
 // 速查页与登录页的 <title>(--app 窗口的窗口标题就是页面标题)
 var dashboardTitles = []string{
 	"延河课堂 DDL",
-	"登录延河课堂 · 延河课堂 DDL",
+	"登录乐学 · 延河课堂 DDL",
 }
 
 // 设置页的窗口标题
@@ -39,6 +39,7 @@ func openWindow(port int) {
 	// 已有窗口:幂等前置,无需防抖
 	if focusExistingAppWindow(dashboardTitles...) {
 		logger.Printf(">> 速查窗口已存在,已切换到前台")
+		applyWindowIconSoon(dashboardTitles...)
 		return
 	}
 
@@ -55,6 +56,7 @@ func openWindow(port int) {
 		// --app 用应用窗口(无地址栏),不影响日常浏览器
 		_ = exec.Command(bin, "--app="+url, "--window-size=1180,880").Start()
 		logger.Printf(">> 已打开速查窗口")
+		applyWindowIconSoon(dashboardTitles...)
 		return
 	}
 	_ = exec.Command("cmd", "/c", "start", url).Start()
@@ -65,6 +67,7 @@ func openWindow(port int) {
 func openSettingsWindow(port int) {
 	if focusExistingAppWindow(settingsTitle) {
 		logger.Printf(">> 设置窗口已存在,已切换到前台")
+		applyWindowIconSoon(settingsTitle)
 		return
 	}
 	openMu.Lock()
@@ -79,6 +82,7 @@ func openSettingsWindow(port int) {
 	if bin := findBrowserBin(); bin != "" {
 		_ = exec.Command(bin, "--app="+url, "--window-size=760,780").Start()
 		logger.Printf(">> 已打开设置窗口")
+		applyWindowIconSoon(settingsTitle)
 		return
 	}
 	_ = exec.Command("cmd", "/c", "start", url).Start()

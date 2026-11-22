@@ -1,7 +1,11 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
+	"image"
+	"image/png"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -12,6 +16,122 @@ import (
 //
 //go:embed assets/app.ico
 var trayIcon []byte
+
+// 按 DPI 预渲染的托盘专用 PNG(16..64,8 档),运行时按 SM_CXSMICON 精确选档,
+// 避免 energye/systray 固定按 SM_CXICON 加载后由 Explorer 拉伸导致的发糊
+//
+//go:embed assets/tray/*.png
+var trayIconFS embed.FS
+
+// trayIconSet 懒加载:档位尺寸 -> 解码后的 RGBA 图像
+var trayIconSet map[int]*image.NRGBA
+
+func loadTrayIconSet() map[int]*image.NRGBA {
+	if trayIconSet != nil {
+		return trayIconSet
+	}
+	set := map[int]*image.NRGBA{}
+	entries, err := trayIconFS.ReadDir("assets/tray")
+	if err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if !strings.HasPrefix(name, "tray_") {
+				continue
+			}
+			size, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(name, "tray_"), ".png"))
+			if err != nil || size <= 0 {
+				continue
+			}
+			f, err := trayIconFS.Open("assets/tray/" + name)
+			if err != nil {
+				continue
+			}
+			img, err := png.Decode(f)
+			f.Close()
+			if err != nil {
+				continue
+			}
+			if m, ok := img.(*image.NRGBA); ok {
+				set[size] = m
+			}
+		}
+	}
+	trayIconSet = set
+	return set
+}
+
+// pickTrayIcon 选出目标尺寸的托盘图像:优先精确档位;没有精确档(罕见
+// 缩放比例)时取最近的一档做盒式重采样兜底。
+func pickTrayIcon(target int) *image.NRGBA {
+	set := loadTrayIconSet()
+	if len(set) == 0 {
+		return nil
+	}
+	if m, ok := set[target]; ok {
+		return m
+	}
+	// 就近找一档:先找不小于目标的,否则取最大的一档
+	var chosen int
+	for size := range set {
+		if chosen == 0 || abs(size-target) < abs(chosen-target) {
+			chosen = size
+		}
+	}
+	return resizeBox(set[chosen], target)
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// resizeBox 盒式平均重采样(纯 Go,无第三方依赖)。缩略图场景
+// 质量足够;仅在目标尺寸不在预渲染档位里时才会走到这里。
+func resizeBox(src *image.NRGBA, size int) *image.NRGBA {
+	w, h := src.Bounds().Dx(), src.Bounds().Dy()
+	if w == 0 || h == 0 || size <= 0 {
+		return src
+	}
+	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
+	px, py := float64(w)/float64(size), float64(h)/float64(size)
+	for y := 0; y < size; y++ {
+		y0, y1 := int(float64(y)*py), int(float64(y+1)*py)
+		if y1 <= y0 {
+			y1 = y0 + 1
+		}
+		if y1 > h {
+			y1 = h
+		}
+		for x := 0; x < size; x++ {
+			x0, x1 := int(float64(x)*px), int(float64(x+1)*px)
+			if x1 <= x0 {
+				x1 = x0 + 1
+			}
+			if x1 > w {
+				x1 = w
+			}
+			var r, g, b, a, n uint64
+			for yy := y0; yy < y1; yy++ {
+				for xx := x0; xx < x1; xx++ {
+					o := yy*src.Stride + xx*4
+					r += uint64(src.Pix[o])
+					g += uint64(src.Pix[o+1])
+					b += uint64(src.Pix[o+2])
+					a += uint64(src.Pix[o+3])
+					n++
+				}
+			}
+			o := y*dst.Stride + x*4
+			dst.Pix[o] = uint8(r / n)
+			dst.Pix[o+1] = uint8(g / n)
+			dst.Pix[o+2] = uint8(b / n)
+			dst.Pix[o+3] = uint8(a / n)
+		}
+	}
+	return dst
+}
 
 // runTray 启动系统托盘并阻塞(桌面模式的主循环)。
 //
@@ -57,6 +177,7 @@ func runTray(onOpen, onSettings func()) {
 		close(ready)
 		trayActive.Store(true)
 		systray.SetIcon(trayIcon)
+		fixTrayIcon() // Windows:按 DPI 精确档位替换库默认加载的图标
 		systray.SetTitle("延河课堂 DDL")
 		systray.SetTooltip("延河课堂 DDL · 左键打开速查窗口")
 
