@@ -58,12 +58,21 @@ func computeBaseDir() string {
 	return "."
 }
 
-// initFileLog 桌面模式:日志写入 server.log,避免无控制台时丢失排错信息
+// initFileLog 桌面模式:日志写入 server.log,避免无控制台时丢失排错信息。
+//
+// 文件本身是 UTF-8(Go 字符串即 UTF-8 字节),但 Windows 记事本等编辑器
+// 对无 BOM 的文本默认按 ANSI(GBK)解码,打开就是乱码。新建文件时写入
+// UTF-8 BOM,编码识别即成定局;已有内容的旧日志不改动(中插 BOM 反而
+// 制造乱码),退出程序后删掉旧 server.log 即可获得带 BOM 的新文件。
 func initFileLog() {
 	f, err := os.OpenFile(filepath.Join(base, "server.log"),
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return
+	}
+	// 文件为空(新建或刚被清空)时写入 BOM;已有内容则不动
+	if st, serr := f.Stat(); serr == nil && st.Size() == 0 {
+		f.Write([]byte{0xEF, 0xBB, 0xBF})
 	}
 	logger = log.New(f, "", log.LstdFlags)
 }
