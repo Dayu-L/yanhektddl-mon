@@ -2,7 +2,7 @@
 
 ## 程序功能(一句话)
 
-延河课堂/北理工乐学 DDL 监控:单文件 Go exe 驱动系统 Edge 抓取本人课程作业截止日期,本地服务 + 托盘 + 速查窗口,可选每日 9:00 通知。详细说明见 [README.md](README.md)。
+延河课堂/北理工乐学 + 智慧树智慧课程的 DDL 监控:单文件 Go exe 驱动系统 Edge 抓取本人课程作业/考试/话题讨论截止日期,本地服务 + 托盘 + 速查窗口,可选每日 9:00 通知。详细说明见 [README.md](README.md),平台接口细节见 [docs/zhihuishu-api.md](docs/zhihuishu-api.md)。
 
 ## 项目结构与调试
 
@@ -10,6 +10,7 @@
 yanhektddl-mon/
 ├─ main.go               # 入口:参数分发;go:embed web/ 页面
 ├─ browser.go / js.go    # 抓取:chromedp 驱动系统 Edge;平台接口 JS 片段
+├─ zhihuishu.go          # 智慧树智慧课程:secretStr 加密 + 作业/考试/话题讨论抓取(新数据源)
 ├─ report.go / types.go  # 数据模型、临期分组规则、Markdown/CSV 报告
 ├─ server.go / desktop.go# 本地 HTTP 服务(127.0.0.1:8765)、桌面模式、窗口开关
 ├─ tray.go / login.go    # 系统托盘、首次登录向导
@@ -21,6 +22,7 @@ yanhektddl-mon/
 ├─ scripts/              # 便携版 bat(GBK 编码!勿转 UTF-8)
 ├─ tools/                # make_icon.py 等离线工具
 ├─ legacy_python/        # 旧 Python 实现存档,不维护
+├─ docs/                 # 平台接口调研笔记(zhihuishu-api.md:签名算法、接口清单、实测样例)
 └─ build/ dist/          # 构建产物,已 gitignore,不入库
 ```
 
@@ -30,6 +32,11 @@ yanhektddl-mon/
 go build -trimpath -ldflags "-s -w -X main.version=0.3.1" -o yanhektddl.exe .
 go vet ./...                                   # 静态检查,提交前必过
 go test -run "TestBrowserSmoke|TestReopenSequence" -v .   # 真实起停 headless Edge,无需登录
+go test -short .                              # 单元测试(跳过联网冒烟)
+go test -run "TestAesSecretVectors|TestZhs" -v .   # 智慧树签名/映射/未登录判定
+
+go build -trimpath -ldflags "-s -w -X main.version=<版本>" -o build/yanhektddl.exe .   # 调试时别污染仓库根目录的 exe
+./build/yanhektddl.exe --fetch        # 全链路验收(注意 build/ 下是另一份 browser_profile)
 
 ./yanhektddl.exe --fetch --visible    # 可见浏览器窗口,排查登录/抓取问题
 ./yanhektddl.exe --from-json           # 不联网,用 ddl_data.json 离线复算报告
@@ -38,7 +45,7 @@ curl http://127.0.0.1:8765/api/status  # 服务是否存活
 ./installer/build-installer.ps1        # 产出 dist/yanhektddl-setup-<版本>.exe
 ```
 
-常见排错:抓取失败先看 `server.log`;"chrome failed to start" 多为 profile 锁残留,程序已内置清锁重试,仍失败就杀掉命令行含 `browser_profile` 的 msedge 进程后重试。
+常见排错:抓取失败先看 `server.log`;"chrome failed to start" 多为 profile 锁残留,程序已内置清锁重试,仍失败就杀掉命令行含 `browser_profile` 的 msedge 进程后重试。日志里出现 "[智慧树] 未登录或会话失效" 说明该数据源没登过录:`--fetch --visible` 在弹出的 Edge 里登录一次智慧树即可(不影响乐学抓取,只是少一个数据源)。
 
 ## Git 操作规范
 
@@ -86,3 +93,5 @@ gh release upload v0.4.1 dist\yanhektddl-setup-0.4.1.exe -R Dayu-L/yanhektddl-mo
 - 版本号三处同源:`main.go` 的 `version`、`installer/installer.iss`、`installer/build-installer.ps1`;发布时统一改动,或用 `./installer/build-installer.ps1 -Version x.y.z` 一次注入
 - 新增 Windows 能力优先写进 `platform_windows.go`(纯 syscall);**禁止引入需要 CGO 的依赖**(本机无 gcc,且会破坏单文件分发)
 - 抓取逻辑改动的验收标准:`--fetch` 全链路真实跑通,不是"编译通过"
+- 新增数据源一律「尽力而为」:未登录/接口异常只能记日志跳过(参考 `browser.go` 阶段 4 + `logZhsSkip`),不得让延河/乐学的核心流程失败
+- 平台密钥、签名算法等平台常量集中在对应源文件头部(如 `zhihuishu.go` 的 `zhsSiteAESKey`),并在 `docs/` 记下实测依据;平台换包失效时先查这类常量

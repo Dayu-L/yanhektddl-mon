@@ -345,10 +345,11 @@ func fetchAitaCourses(s *browserSession) ([]Course, bool) {
 	return nil, false
 }
 
-// tryCollect 三阶段:
+// tryCollect 四阶段:
 //   阶段 1  延河课堂课程列表 —— 尽力而为,失败沿用缓存
 //   阶段 2  eclass 待办(快路径,/api/todos)—— 核心数据,必须成功
 //   阶段 3  深度扫描(可选)—— 逐课程并行扫,补齐已完成/已过期/问卷
+//   阶段 4  智慧树智慧课程的作业/考试/话题讨论 —— 增量数据源,失败只记日志
 //
 // 未登录 -> errNotLoggedIn;成功 -> 结构化结果。
 func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
@@ -433,6 +434,17 @@ func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
 			fmt.Printf(">> 深度扫描:%d 门课,带截止时间的任务 %d 条\n",
 				len(zyIDs), len(items))
 		}
+	}
+
+	// ---- 阶段 4:智慧树(在线学堂)智慧课程 ----
+	// 放在最后:它会把浏览器导航到智慧树域,不能影响上面的 eclass 抓取。
+	// 该平台未登录/接口异常都只跳过,不阻死延河课堂的主流程。
+	if ais, aiItems, zhsErr := collectZhihuishu(s, deep); zhsErr != nil {
+		logZhsSkip(zhsErr)
+	} else if len(ais) > 0 {
+		courses = append(courses, ais...)
+		items = append(items, aiItems...)
+		fmt.Printf(">> 智慧树智慧课程:%d 门课,任务 %d 条\n", len(ais), len(aiItems))
 	}
 	return &collectResult{Courses: courses, Items: items,
 		Submitted: submitted, Deep: deep}, nil

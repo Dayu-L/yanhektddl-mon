@@ -22,12 +22,15 @@ type Course struct {
 
 type Item struct {
 	Zy    string      `json:"zy"`
-	Kind  string      `json:"kind"` // homework / exam / questionnaire
+	Kind  string      `json:"kind"` // homework / exam / questionnaire(延河);ai_homework / ai_exam / ai_topic(智慧树)
 	ID    interface{} `json:"id"`
 	Title string      `json:"title"`
 	End   string      `json:"end"`
 	SC    int         `json:"sc"` // user_submit_count,-1 = 未知
 	Desc  string      `json:"desc"`
+	// 以下两个字段供非延河平台使用(延河数据留空,走原有推断逻辑):
+	Status string `json:"status,omitempty"` // 显式提交状态("未完成"/"已完成")
+	URL    string `json:"url,omitempty"`    // 任务跳转地址(空 = 按延河 eclass 规则拼接)
 }
 
 type Snapshot struct {

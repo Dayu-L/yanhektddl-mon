@@ -7,6 +7,8 @@ package main
 //                      一次拿到全部课程"未提交且未过期"的任务,再并行补详情
 //   jsCollectEclass —— [深扫] 逐课程扫 activities/exams/submitted-exams,
 //                      课程级并发 + 详情请求全局信号量
+//   jsZhsAICourses  —— 智慧树:智慧课程列表(secretStr 已由 Go 侧算好)
+//   jsZhsAITasks    —— 智慧树:某门课程的作业/考试/话题讨论任务列表
 // 返回值统一为 JSON.stringify 字符串,便于 Go 解析。
 
 // 在 aita.yanhekt.cn 域内探测登录状态
@@ -152,4 +154,71 @@ const jsCollectEclass = `async (zyIds) => {
   }
   await Promise.all(workers);
   return JSON.stringify({items: items, submittedExams: submittedExams});
+}`
+
+// ---------------------------------------------------------------- 智慧树(在线学堂)
+//
+// 智慧树的 /gateway/t/* 接口都要参数 secretStr(见 docs/zhihuishu-api.md)。
+// 学生首页网关的 secretStr 由 Go 侧算好传进来(密钥失效时只改 Go 常量);
+// 智慧课程(kg-*)的签名只能在页面主世界现算,故这两个全局函数必须存在:
+//   window.labc(n)        -> 172 字符的会话密钥串
+//   window.yxyz(data,key) -> RSA 包住 key 后 AES 加密 payload
+// 页面主世界即 chromedp Runtime.evaluate 的默认执行环境,可以直接调用。
+
+// 智慧树 · 智慧课程列表(在 onlineweb.zhihuishu.com 域内执行)。
+const jsZhsAICourses = `async (secretStr) => {
+  try {
+    const r = await fetch('` + zhsAICourseAPI + `', {
+      method: 'POST', credentials: 'include',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'secretStr=' + encodeURIComponent(secretStr)
+    });
+    if (!r.ok) return JSON.stringify({ok: false, why: 'HTTP ' + r.status});
+    const txt = await r.text();
+    let j = null;
+    try { j = JSON.parse(txt); } catch (e) { return JSON.stringify({ok: false, why: 'not-json'}); }
+    const rt = j.rt || j.result;
+    if (!Array.isArray(rt)) return JSON.stringify({ok: false, why: (j.msg || j.message || 'no-list')});
+    return JSON.stringify({ok: true, courses: rt});
+  } catch (e) { return JSON.stringify({ok: false, why: String(e)}); }
+}`
+
+// 智慧树 · 某门智慧课程的任务列表(在 ai-smart-course-student-pro 域内执行)。
+// lists 形如 [[taskType,status],...];返回 {ok, lists:{"type:status":[任务]}, errs}
+// 只保留用得上的字段:接口里的 taskDesc 是整段 HTML,原样传回会把日志和快照撑爆。
+const jsZhsAITasks = `async (courseId, lists) => {
+  try {
+    if (typeof window.yxyz !== 'function' || typeof window.labc !== 'function') {
+      return JSON.stringify({ok: false, why: 'no-sdk'});
+    }
+    const key = await window.labc(6);
+    const out = {}, errs = {};
+    for (const pair of lists) {
+      const taskType = pair[0], status = pair[1];
+      const k = taskType + ':' + status;
+      try {
+        const r = await fetch('` + zhsAITaskAPI + `', {
+          method: 'POST', credentials: 'include',
+          headers: {'Content-Type': 'application/json;charset=UTF-8'},
+          body: JSON.stringify({
+            secretStr: window.yxyz({courseId: courseId, taskType: taskType, taskName: '', status: status}, key),
+            date: Date.now()
+          })
+        });
+        const txt = await r.text();
+        let j = null;
+        try { j = JSON.parse(txt); } catch (e) { out[k] = []; errs[k] = 'not-json'; continue; }
+        if ((j.code | 0) !== 200) { out[k] = []; errs[k] = (j.message || ('code ' + j.code)); continue; }
+        out[k] = (Array.isArray(j.data) ? j.data : []).map(x => ({
+          id: x.id, name: x.taskName || '',
+          desc: String(x.taskDesc || '').slice(0, 1200),
+          type: x.taskType || 0, status: x.status || 0,
+          start: x.startTime || '', end: x.endTime || '',
+          examId: (x.examId == null ? null : x.examId),
+          reply: (x.taskDiscussionVO && typeof x.taskDiscussionVO.isReply === 'boolean') ? x.taskDiscussionVO.isReply : null
+        }));
+      } catch (e) { out[k] = []; errs[k] = String(e); }
+    }
+    return JSON.stringify({ok: true, lists: out, errs: errs});
+  } catch (e) { return JSON.stringify({ok: false, why: String(e)}); }
 }`

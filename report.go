@@ -26,6 +26,10 @@ var (
 		"homework":      "作业",
 		"exam":          "测验/习题",
 		"questionnaire": "问卷",
+		// 智慧树(在线学堂)智慧课程的任务类型
+		kindAIHomework: "作业",
+		kindAIExam:     "考试",
+		kindAITopic:    "话题讨论",
 	}
 )
 
@@ -139,7 +143,13 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 
 		var done bool
 		status := "未完成"
-		if it.Kind == "exam" {
+		switch {
+		case it.Status != "":
+			// 数据源自己给了明确的提交状态(智慧树):直接采信,
+			// 它比“提交数/已提交考试列表”这类侧写更准。
+			status = it.Status
+			done = it.Status == "已完成"
+		case it.Kind == "exam":
 			for _, idv := range submitted[it.Zy] {
 				if idString(idv) == idString(it.ID) {
 					done = true
@@ -149,7 +159,7 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 			if done {
 				status = "已完成"
 			}
-		} else {
+		default:
 			done = it.SC > 0
 			switch {
 			case done:
@@ -166,12 +176,16 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 			}
 		}
 
-		// 一键跳转:作业/问卷 -> learning-activity#/{id},考试 -> learning-activity#/exam/{id}
-		url := eclassBase + "/course/" + it.Zy + "/learning-activity#/"
-		if it.Kind == "exam" {
-			url += "exam/"
+		// 一键跳转:优先用数据源给的地址(智慧树);否则按延河规则拼
+		// 作业/问卷 -> learning-activity#/{id},考试 -> learning-activity#/exam/{id}
+		url := it.URL
+		if url == "" {
+			url = eclassBase + "/course/" + it.Zy + "/learning-activity#/"
+			if it.Kind == "exam" {
+				url += "exam/"
+			}
+			url += idString(it.ID)
 		}
-		url += idString(it.ID)
 
 		rep.Rows = append(rep.Rows, &Row{
 			Course: course,

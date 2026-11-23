@@ -166,22 +166,56 @@ payload: {}
 `startTime`/`endTime`（`YYYY-MM-DD HH:MM:SS`）、`linkUrl`（课程页地址）、`mastery`。
 实测正常返回在学智慧课程（`linkUrl` 指向 `ai-smart-course-student-pro` 域名下的课程页）。
 
-#### 考试待办 / 任务汇总 / 任务列表（kg-*，需 `window.yxyz`）【实测】
+#### 任务列表(taskList,已完整验证)【实测】
 
 ```
-POST https://kg-ai-run.zhihuishu.com/run/gateway/t/stu/task/v2/get-exam-todo-tasks
-payload: {"courseId":"<courseId>","classId":<classId>}
+POST https://kg-run-student.zhihuishu.com/student/gateway/t/task/taskList
+payload: {"courseId":"<courseId>","taskType":1,"taskName":"","status":0}
+```
 
+- 参数取自前端真实请求(hook `window.yxyz` 获得):`courseId`、`taskType`、`taskName`(空串)、`status`。
+  **不需要** `classId`,也没有分页参数 —— 一门课一次全量返回。
+- `taskType`:`1`=作业测试、`2`=考试、`3`=话题讨论。
+- `status`:**`0`=未完成/进行中,`1`=已完成/已结束**(与页面 tab 一一对应)。
+  `taskType=2` 实测返回 200,但当前账号无考试,列表为空(见 §5)。
+- 返回 `data[]`,元素关键字段:
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | 任务 id |
+| `taskName` | 标题 |
+| `taskDesc` | 任务描述(整段 HTML,实测单条可达 4.5 KB;`taskDescribe` 多为 `null`) |
+| `taskType` / `status` | 任务类型;元素级 `status` `1`=进行中、`2`=已结束 |
+| `startTime` / `endTime` | `YYYY-MM-DD HH:MM:SS`,**精确到秒**(页面上只显示「剩余 6天13小时」) |
+| `examId` / `examTestId` / `examPaperId` | 作业/考试关联的试卷 id(话题讨论为 `null`) |
+| `score` / `totalScore` | 成绩(未评分 `null`) |
+| `taskDiscussionVO.isReply` / `isWatch` | 仅话题讨论:我是否已回复 / 已围观 |
+| `courseId` / `classId` | 课程、班级 id |
+
+实测样例:话题讨论 `status:0` 返回 19 条(进行中)、`status:1` 返回 2 条(已结束);
+作业 `status:1` 返回 2 条已完成、`status:0` 为空。
+
+**完成状态判定**:
+
+- 作业/考试:查询侧 `status`(0/1)就是结论,直接采信。
+- 话题讨论:接口的 `status` 表示讨论「进行中/已结束」,与「我是否回复」无关,
+  因此用元素级 `taskDiscussionVO.isReply` 判定;已结束但未回复的仍算未完成(属于漏交)。
+
+#### 任务汇总与考试待办(备用)【实测】
+
+```
 POST https://kg-run-student.zhihuishu.com/student/gateway/t/home/query-course-task-type
 payload: {"courseId":"<courseId>","classId":<classId>}
 
-POST https://kg-run-student.zhihuishu.com/student/gateway/t/task/taskList
-payload: {"courseId":"<courseId>","classId":<classId>,"taskType":1,"pageNo":1,"pageSize":100}
+POST https://kg-ai-run.zhihuishu.com/run/gateway/t/stu/task/v2/get-exam-todo-tasks
+payload: {"courseId":"<courseId>","classId":<classId>}
+
+POST https://kg-ai-run.zhihuishu.com/run/gateway/t/stu/task/v2/get-all-exam-todo-tasks
+payload: {}   # 实测同样 200
 ```
 
-- 待办：`data:[]`（当前无考试待办）。
-- 汇总：`data:[{taskName:"作业测试",taskType:1,count:<任务数>,unfinished:<未完成数>},{taskName:"话题讨论",taskType:3,count:<任务数>,unfinished:<进行中数>}]`（`count/unfinished` 为个人数值，故以占位表示）。
-- 任务列表：`data:[]`；`taskType`/状态过滤参数**尚未确认**（`taskType=1`＝作业测试、`3`＝话题讨论 由汇总接口推断）。
+- 汇总:`data:[{taskName:"作业测试",taskType:1,count:<任务数>,unfinished:<未完成数>},{taskName:"话题讨论",taskType:3,...}]`(个人数值以占位表示)。
+- 考试待办:`data:[]`(当前无考试待办,元素字段【待补】)。因为 `taskList` 的 `taskType=2` 复用同一套 schema,实现里以 `taskList` 为准,这两个接口只作备用。
 
 ### 3.3 免签的提醒/通知类接口【实测，均返回空数组】
 
@@ -221,21 +255,37 @@ payload: {"courseId":"<courseId>","classId":<classId>,"taskType":1,"pageNo":1,"p
 
 ## 5. 待补与风险
 
-**待补样例**（当前账号无 pending 数据，需等有未交作业/考试时再抓一次）：
+**待补样例**：
 
-1. `getStudentHomework flag=1` 非空时列表字段名（`studentHomeworkList` 的未提交形态）。
-2. `getStudentFinalExam flag=1` 非空元素字段。
-3. `taskList` 的完整筛选参数（状态/分页字段名）。
-4. 话题讨论（`taskType=3`，存在进行中任务）是否存在截止时间。
-5. `get-exam-todo-tasks` 非空时的字段。
+1. `taskList` 的作业/考试「未完成」侧(`taskType=1|2`, `status=0`)非空样例。
+2. 「进行中但已交」的作业出现在哪个列表(元素级 `examStatus` 取值)—— 若它仍落在 `status:0`,
+   则作业/考试也不能只看查询侧 `status`,需改看 `examStatus`。
+3. 是否真存在 `taskType=2` 的考试数据(当前账号无考试,只能确认接口返回 200)。
+4. `get-exam-todo-tasks` / `get-all-exam-todo-tasks` 非空时的字段。
+5. 共享课的作业/考试(密钥已破解,尚未实现,见 §2.1)。
 6. 课程列表里的 `secret` 字段用途。
 
 **风险**：
 
-1. AES key/iv 取自前端 bundle 常量，**平台换包即可能失效**；同时需观察是否按学期轮换。建议把两对 key/iv 写成常量，并在解密失败时记日志提示。
-2. kg-* 的 `window.labc` / `window.yxyz` 依赖目标页面已加载 SDK；若改版后符号改名，需重新定位（`aesUtil`/`rsaUtil`/`labc2` 是同时存在的备选符号）。
-3. 未验证会话过期后的行为（CAS 静默续期链是否会影响页面内 `fetch`）。
-4. 抓取频率需克制：上述接口均为只读列表，但学生首页本身并发请求较多，轮询间隔不宜低于现有延河策略。
+1. AES key/iv 取自前端 bundle 常量,平台换包即可能失效;同时需观察是否按学期轮换。
+   Go 侧已把两对常量集中在 `zhihuishu.go`,解密失败会体现在「aes加密参数异常」的报错里。
+2. 智慧课程的 `window.labc` / `window.yxyz` 依赖页面已加载 SDK;若改版后符号改名,
+   需重新定位(`aesUtil`/`rsaUtil`/`labc2` 是同时存在的备选符号)。
+3. 未验证会话过期后的行为(CAS 静默续期链是否会影响页面内 `fetch`)。
+4. 抓取频率需克制:上述接口均为只读列表,但学生首页本身并发请求较多,
+   轮询间隔不宜低于现有延河策略。
+
+---
+
+## 6. 已落地实现(仓库内)
+
+| 关注点 | 位置 |
+| --- | --- |
+| `secretStr` 加密、课程/任务映射、智慧课程抓取流程 | `zhihuishu.go`(`aesSecret` / `collectZhihuishu` / `zhsItemFromTask`) |
+| 两段页面 JS(课程列表、任务列表) | `js.go` 的 `jsZhsAICourses` / `jsZhsAITasks` |
+| 接入抓取主流程(阶段性、失败只自动跳过) | `browser.go` 的 `tryCollect` 阶段 4 |
+| 非延河平台的任务字段(`status` / `url`) | `types.go` 的 `Item`、`report.go` 的 `buildReport` |
+| 单元测试(密钥向量、字段映射、报告行为、未登录判定) | `zhihuishu_test.go` |
 
 ---
 
