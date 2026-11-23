@@ -18,6 +18,8 @@ type Course struct {
 	ZyID    string `json:"zyId"`
 	EndAt   int64  `json:"endAt"`
 	Term    string `json:"term"`
+	// Platform 课程来源:延河课堂 / 智慧树(旧快照没有该字段,归一时兜底为延河课堂)
+	Platform string `json:"platform,omitempty"`
 }
 
 type Item struct {
@@ -28,8 +30,8 @@ type Item struct {
 	End   string      `json:"end"`
 	SC    int         `json:"sc"` // user_submit_count,-1 = 未知
 	Desc  string      `json:"desc"`
-	// 以下两个字段供非延河平台使用(延河数据留空,走原有推断逻辑):
-	Status string `json:"status,omitempty"` // 显式提交状态("未完成"/"已完成")
+	// 以下两个字段在采集出口由 normalizeItem 统一填好(各平台一致):
+	Status string `json:"status,omitempty"` // 提交状态,归一后为 未完成/已完成/未知(normalize.go 统一填)
 	URL    string `json:"url,omitempty"`    // 任务跳转地址(空 = 按延河 eclass 规则拼接)
 }
 
@@ -44,21 +46,21 @@ type Snapshot struct {
 // ---------------------------------------------------------------- 报告类型
 
 type Row struct {
-	Course string
-	Kind   string // 作业 / 测验/习题 / 问卷 / 考试 / 话题讨论
-	Platform string // 乐学 / 智慧树(数据来源,速查页用于标识与筛选)
-	Title  string
-	End    time.Time
-	Status string
-	Done   bool
-	NoNeed bool
-	Ignored bool // 用户在速查页标记“忽略”(不再提醒/统计)
+	Course      string
+	Kind        string // 作业 / 测验/习题 / 问卷 / 考试 / 话题讨论
+	Platform    string // 乐学 / 智慧树(数据来源,速查页用于标识与筛选)
+	Title       string
+	End         time.Time
+	Status      string
+	Done        bool
+	NoNeed      bool
+	Ignored     bool // 用户在速查页标记“忽略”(不再提醒/统计)
 	AutoIgnored bool // 已过期超过 48 小时,自动忽略(计算得出,不落盘)
-	ID     string
-	Desc   string // strip_html 后、截断 60 字(报告用)
-	Full   string // desc_to_text 后全文(速查页详情用)
-	URL    string
-	Zy     string
+	ID          string
+	Desc        string // strip_html 后、截断 60 字(报告用)
+	Full        string // desc_to_text 后全文(速查页详情用)
+	URL         string
+	Zy          string
 }
 
 type CloseInfo struct {

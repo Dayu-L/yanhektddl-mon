@@ -22,18 +22,18 @@ var (
 	reWS       = regexp.MustCompile(`\s+`)
 
 	noNeedWords = []string{"不需要提交", "无需提交", "仅供练习"}
-	kindNames   = map[string]string{
-		"homework":      "作业",
-		"exam":          "测验/习题",
-		"questionnaire": "问卷",
-		// 智慧树(在线学堂)的任务类型(共享课与智慧课程共用)
-		kindAIHomework: "作业",
-		kindAIExam:     "考试",
-		kindAITopic:    "话题讨论",
+	// 类型中文名。键是 normalize.go 收敛后的规范值,三个平台共用一套,
+	// 不再按来源分叉(历史上乐学的 exam 叫「测验/习题」、智慧树叫「考试」)。
+	kindNames = map[string]string{
+		kindHomework:      "作业",
+		kindExam:          "考试/测验",
+		kindQuestionnaire: "问卷",
+		kindTopic:         "话题讨论",
 	}
-	// platformNames 数据来源标识:速查页据此打标签并做筛选
+	// 数据来源标识:速查页据此打标签并做筛选,关闭时间表据此区分平台
 	platformEclass = "乐学"
 	platformZhs    = "智慧树"
+	platformAita   = "延河课堂"
 )
 
 // ---------------------------------------------------------------- 文本处理
@@ -133,7 +133,10 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 	}
 
 	rep := &Report{Now: now}
-	for _, it := range items {
+	for _, raw := range items {
+		// 三个数据源在这里合流:时间/ID/类型/状态/链接的差异都已在
+		// normalizeItem 里抹平,下面只按规范值渲染。
+		it := normalizeItem(raw, submitted)
 		c := courseByZy[it.Zy]
 		course := c.Title
 		if course == "" {
@@ -144,33 +147,8 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 		desc := stripHTML(it.Desc)
 		noNeed := containsAny(desc, noNeedWords)
 
-		var done bool
-		status := "未完成"
-		switch {
-		case it.Status != "":
-			// 数据源自己给了明确的提交状态(智慧树):直接采信,
-			// 它比“提交数/已提交考试列表”这类侧写更准。
-			status = it.Status
-			done = it.Status == "已完成"
-		case it.Kind == "exam":
-			for _, idv := range submitted[it.Zy] {
-				if idString(idv) == idString(it.ID) {
-					done = true
-					break
-				}
-			}
-			if done {
-				status = "已完成"
-			}
-		default:
-			done = it.SC > 0
-			switch {
-			case done:
-				status = "已完成"
-			case it.SC < 0:
-				status = "未知"
-			}
-		}
+		status := it.Status
+		done := status == statusDone
 		if noNeed {
 			if done {
 				status = "已完成(无需提交)"
@@ -179,15 +157,11 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 			}
 		}
 
-		// 一键跳转:优先用数据源给的地址(智慧树);否则按延河规则拼
-		// 作业/问卷 -> learning-activity#/{id},考试 -> learning-activity#/exam/{id}
+		// 一键跳转:normalizeItem 已给出最终地址(eclass 自拼、智慧树用接口值),
+		// 这里保留一次兜底,防止旧快照缺字段。
 		url := it.URL
 		if url == "" {
-			url = eclassBase + "/course/" + it.Zy + "/learning-activity#/"
-			if it.Kind == "exam" {
-				url += "exam/"
-			}
-			url += idString(it.ID)
+			url = eclassURL(it.Zy, it.Kind, idString(it.ID))
 		}
 
 		rep.Rows = append(rep.Rows, &Row{
@@ -241,12 +215,13 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 		default:
 			rep.Bucket.Later = append(rep.Bucket.Later, r)
 		}
-		if r.Status == "未知" {
+		if r.Status == statusUnknown {
 			rep.Bucket.Unknown = append(rep.Bucket.Unknown, r)
 		}
 	}
 
 	for _, c := range courses {
+		c = normalizeCourse(c)
 		if c.EndAt == 0 {
 			continue
 		}
@@ -289,7 +264,7 @@ func writeReports(rep *Report, urgentDays int) {
 	unfinished := 0
 	ignoredCount := 0
 	for _, r := range rep.Rows {
-		if r.Status == "未完成" || r.Status == "未知" {
+		if r.Status == statusUndone || r.Status == statusUnknown {
 			if r.Ignored {
 				ignoredCount++
 			} else {
@@ -328,10 +303,10 @@ func writeReports(rep *Report, urgentDays int) {
 		L = append(L, mdTable(rep.Bucket.Unknown, now))
 	}
 
-	L = append(L, "\n## 🏁 课程开放截止时间(延河课堂)\n")
+	L = append(L, "\n## 🏁 课程开放截止时间(延河课堂 / 智慧树)\n")
 	if len(rep.Closes) > 0 {
-		L = append(L, "| 课程 | 开课学院 | 关闭时间(北京) | 状态 |")
-		L = append(L, "|---|---|---|---|")
+		L = append(L, "| 课程 | 平台 | 开课学院 | 关闭时间(北京) | 状态 |")
+		L = append(L, "|---|---|---|---|---|")
 		for _, c := range rep.Closes {
 			state := c.Left
 			if c.Passed {
@@ -341,8 +316,8 @@ func writeReports(rep *Report, urgentDays int) {
 			if college == "" {
 				college = "-"
 			}
-			fmtS := fmt.Sprintf("| %s | %s | %s | %s |", c.Title, college,
-				c.End.Format("2006-01-02 15:04"), state)
+			fmtS := fmt.Sprintf("| %s | %s | %s | %s | %s |", c.Title, c.Platform,
+				college, c.End.Format("2006-01-02 15:04"), state)
 			L = append(L, fmtS)
 		}
 		L = append(L, "")
@@ -387,8 +362,9 @@ func writeReports(rep *Report, urgentDays int) {
 		if c.Passed {
 			left = "已关闭"
 		}
+		note := strings.TrimSpace(c.Platform + " " + c.College)
 		w.Write([]string{"课程关闭", c.Title, "", "",
-			c.End.Format("2006-01-02 15:04:05"), left, "", c.College,
+			c.End.Format("2006-01-02 15:04:05"), left, "", note,
 			"https://aita.yanhekt.cn/education/?tenant_code=21#/home"})
 	}
 	w.Flush()

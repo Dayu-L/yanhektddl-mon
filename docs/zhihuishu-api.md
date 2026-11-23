@@ -261,21 +261,28 @@ payload: {}   # 实测同样 200
 
 ---
 
-## 4. 数据模型映射建议
+## 4. 数据模型与归一（已实施）
 
-现有代码用 `Course` + `Item{Kind, Title, End, ...}`（见 `types.go`）：
+三路数据（乐学 eclass / 智慧树共享课 / 智慧树智慧课程）都落进同一个 `Item`，
+并在 `normalize.go` 的 `normalizeItem` 里抹平差异；采集出口（写 `ddl_data.json`）
+与报告入口（`buildReport`，覆盖 `--from-json` 与旧快照）各过一遍，函数幂等。
 
-| 智慧树字段 | 映射 |
-| --- | --- |
-| `courseName` / `examName` | `Course.Title` / `Item.Title` |
-| 共享课作业（`getStudentHomework`） | `Kind="homework"` |
-| 共享课考试（`getStudentFinalExam`、`getStudentNoCommitExam`） | `Kind="exam"` |
-| 智慧课程任务（`taskList`） | `Kind="homework"`（待区分测验/讨论） |
-| `endDate` / `endTime` | `Item.End`（已是本地时间字符串，直接按 `2006-01-02 15:04:05` 解析） |
-| `id` + `examId` | `Item.ID` |
-| 来源标记 | 现有 `Item` 只有 `Zy` 字段，需要新增平台维度区分「延河 / 智慧树」（如 `Zy="zhihuishu"` 或独立字段） |
+| 维度 | 归一后 | 各来源原始形态 |
+| --- | --- | --- |
+| `end` | `YYYY-MM-DD HH:MM:SS`（北京时间） | 乐学 `2026-12-13T15:59:00Z`；智慧树 `2026-12-13 23:59:00` |
+| `id` | 字符串 | 乐学数字；智慧树字符串 |
+| `kind` | `homework` / `exam` / `questionnaire` / `topic` | 乐学 `homework`/`exam`/`questionnaire`；智慧树 `ai_homework`/`ai_exam`/`ai_topic` |
+| `status` | `未完成` / `已完成` / `未知`，永远显式 | 乐学为空（按提交数、已提交考试列表推断）；智慧树接口直接给 |
+| `url` | 可直接打开的最终地址 | 乐学为空（按 eclass 规则拼）；智慧树接口给 |
+| `title` | 压缩空白、超 120 字截断加 `…` | 智慧树话题讨论的标题是整段问题 |
+| `sc` | 仅乐学有意义（提交数，-1=未知），其它来源恒 `-1` | 完成状态统一由 `status` 表达 |
+| `Course.Platform` | `延河课堂` / `智慧树` | 旧快照无该字段，归一兜底为 `延河课堂` |
 
----
+类型中文名统一走一张表（`report.go` 的 `kindNames`）：作业 / 考试·测验 / 问卷 / 话题讨论。
+历史上乐学的 `exam` 显示为「测验/习题」、智慧树为「考试」，现已合并为「考试/测验」。
+
+课程级：`Course.EndAt` 三个来源都填（智慧树共享课给毫秒、智慧课程给北京时间字符串），
+「课程开放截止时间」表用 `Platform` 列区分来源。
 
 ## 5. 待补与风险
 

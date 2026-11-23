@@ -154,20 +154,23 @@ func zhsSharePageURL(c zhsShareCourse) string {
 // EndAt 留 0:报告里「课程开放截止时间」一栏目前只放延河课堂口径的数据,
 // 智慧树课程(sharedEnd 是毫秒)等前端做好平台标识后再合并进去。
 func zhsShareCourseToCourse(c zhsShareCourse) Course {
+	// 共享课给的是毫秒时间戳;courseEndTime 即课程关闭时间
 	return Course{
-		Title:   c.CourseName,
-		Teacher: c.TeacherName,
-		College: c.SchoolName,
-		ZyID:    zhsShareZYPrefix + string(c.CourseID),
+		Title:    c.CourseName,
+		Teacher:  c.TeacherName,
+		College:  c.SchoolName,
+		ZyID:     zhsShareZYPrefix + string(c.CourseID),
+		EndAt:    endAtFromMillis(string(c.CourseEndTime)),
+		Platform: platformZhs,
 	}
 }
 
 // zhsShareStatus 由 flag 得出完成状态。
 func zhsShareStatus(flag int) string {
 	if flag == zhsFlagFinished {
-		return "已完成"
+		return statusDone
 	}
-	return "未完成"
+	return statusUndone
 }
 
 // zhsShareHomeworkItem / zhsShareExamItem 任务 -> Item。

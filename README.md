@@ -191,6 +191,7 @@ yanhektddl-mon/
 ├─ browser.go / js.go      # 抓取:chromedp 驱动系统 Edge,平台接口 JS 片段
 ├─ zhihuishu.go            # 智慧树:secretStr 加密、登录探测、智慧课程(作业/考试/话题讨论)抓取
 ├─ zhihuishu_share.go      # 智慧树共享课:recruitId 编码、Go 侧 HTTP 抓作业/考试(含网关预热)
+├─ normalize.go            # 数据归一:三路来源的时间/ID/类型/状态/链接抹平成同一套
 ├─ report.go / types.go    # 数据模型、分组规则、Markdown/CSV 报告
 ├─ server.go / desktop.go  # 本地 HTTP 服务、桌面模式、窗口开关
 ├─ settings.go             # 设置读写(自动检测/关闭行为)与计划任务同步

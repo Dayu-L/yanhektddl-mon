@@ -20,12 +20,12 @@ import (
 var errNotLoggedIn = errors.New("未登录")
 
 const (
-	actionTO     = 60 * time.Second // 单次导航/脚本执行上限
-	bootTO       = 30 * time.Second // 浏览器启动(管道模式之外的握手)上限
-	pipeBootTO   = 12 * time.Second // 管道模式首次尝试上限:旧版浏览器不认 Windows 管道参数,尽快回退
-	todosWaitTO  = 15 * time.Second // eclass 待办轮询窗口:覆盖会话过期后的 CAS 静默续期重定向链
-	aitaLoginTO  = 90 * time.Second // 登录向导中延河课堂(可选步骤)的等待上限
-	zhsLoginTO   = 120 * time.Second // 登录向导中智慧树(可选数据源)的等待上限:微信扫码/手机号登录预留时间
+	actionTO    = 60 * time.Second  // 单次导航/脚本执行上限
+	bootTO      = 30 * time.Second  // 浏览器启动(管道模式之外的握手)上限
+	pipeBootTO  = 12 * time.Second  // 管道模式首次尝试上限:旧版浏览器不认 Windows 管道参数,尽快回退
+	todosWaitTO = 15 * time.Second  // eclass 待办轮询窗口:覆盖会话过期后的 CAS 静默续期重定向链
+	aitaLoginTO = 90 * time.Second  // 登录向导中延河课堂(可选步骤)的等待上限
+	zhsLoginTO  = 120 * time.Second // 登录向导中智慧树(可选数据源)的等待上限:微信扫码/手机号登录预留时间
 )
 
 // preferWebSocket 记录本次运行是否已回退到 WebSocket 传输。
@@ -374,6 +374,9 @@ func fetchAitaCourses(s *browserSession) ([]Course, bool) {
 			}
 			if json.Unmarshal([]byte(out), &res) == nil {
 				if res.Error == "" && res.Total > 0 {
+					for i := range res.Courses {
+						res.Courses[i].Platform = platformAita
+					}
 					return res.Courses, true
 				}
 				return nil, false // HTTP 401 等明确失败,重试无意义
@@ -621,11 +624,21 @@ func saveCollected(res *collectResult, deep bool) (*Snapshot, error) {
 	if deep {
 		deepAt = time.Now().In(TZ).Format(time.RFC3339)
 	}
+	// 出口归一:快照文件本身只保留一种格式(时间北京时间、id 字符串、
+	// kind 规范值、status 显式),这样 --from-json 与外部脚本都不用再兼容。
+	items := make([]Item, len(res.Items))
+	for i, it := range res.Items {
+		items[i] = normalizeItem(it, res.Submitted)
+	}
+	courses := make([]Course, len(res.Courses))
+	for i, c := range res.Courses {
+		courses[i] = normalizeCourse(c)
+	}
 	snap := &Snapshot{
 		FetchedAt:      time.Now().In(TZ).Format(time.RFC3339),
 		DeepAt:         deepAt,
-		Courses:        res.Courses,
-		Items:          res.Items,
+		Courses:        courses,
+		Items:          items,
 		SubmittedExams: res.Submitted,
 	}
 	if err := saveSnapshot(snap); err != nil {

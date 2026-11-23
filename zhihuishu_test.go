@@ -75,8 +75,13 @@ func TestZhsCoursesUnmarshal(t *testing.T) {
 	if got.ZyID != "zhs:ai:2100" || got.Title != "示例课" || got.Teacher != "老师" {
 		t.Fatalf("课程映射不符:%+v", got)
 	}
-	if got.EndAt != 0 {
-		t.Fatalf("智慧树课程暂不参与「课程关闭时间」一栏,EndAt 应为 0")
+	// 智慧课程也有课程关闭时间(endTime,北京时间字符串),归一后进「课程关闭时间」表
+	if got.Platform != platformZhs {
+		t.Fatalf("课程来源应为 %s,实际 %q", platformZhs, got.Platform)
+	}
+	if want := "2027-01-31 23:59"; got.EndAt == 0 ||
+		time.Unix(got.EndAt, 0).In(TZ).Format("2006-01-02 15:04") != want {
+		t.Fatalf("EndAt 应解析为 %s,实际 %d", want, got.EndAt)
 	}
 }
 

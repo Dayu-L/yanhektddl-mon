@@ -139,14 +139,17 @@ type zhsTask struct {
 
 // ---------------------------------------------------------------- 映射(纯函数,便于单测)
 
-// zhsCourseToCourse 课程 -> 快照里的 Course。EndAt 留 0:报告里「课程开放
-// 截止时间」一栏按延河课堂口径展示,智慧树课程暂不混进去。
+// zhsCourseToCourse 课程 -> 快照里的 Course。
+// 智慧课程也带课程关闭时间(endTime),与延河课堂一样进「课程开放截止时间」表,
+// 靠 Platform 列区分来源。
 func zhsCourseToCourse(c zhsCourse) Course {
 	return Course{
-		Title:   c.CourseName,
-		Teacher: c.TeacherName,
-		College: c.SchoolName,
-		ZyID:    zhsZYPrefix + string(c.CourseID),
+		Title:    c.CourseName,
+		Teacher:  c.TeacherName,
+		College:  c.SchoolName,
+		ZyID:     zhsZYPrefix + string(c.CourseID),
+		EndAt:    endAtFromTime(c.EndTime),
+		Platform: platformZhs,
 	}
 }
 
@@ -191,9 +194,9 @@ func zhsItemFromTask(c zhsCourse, t zhsTask, queryStatus int) Item {
 	if t.Type == zhsTaskTopic {
 		done = t.Reply != nil && *t.Reply
 	}
-	status := "未完成"
+	status := statusUndone
 	if done {
-		status = "已完成"
+		status = statusDone
 	}
 	desc := strings.TrimSpace(t.Desc)
 	if t.Type == zhsTaskTopic {
