@@ -165,8 +165,14 @@ const jsCollectEclass = `async (zyIds) => {
 //   window.yxyz(data,key) -> RSA 包住 key 后 AES 加密 payload
 // 页面主世界即 chromedp Runtime.evaluate 的默认执行环境,可以直接调用。
 
-// 智慧树 · 智慧课程列表(在 onlineweb.zhihuishu.com 域内执行)。
+// 智慧树 · 智慧课程列表(在智慧树自家域的页面内执行)。
+// 第一行是登录态兜底:未登录时页面会被弹到 passport.zhihuishu.com(统一登录),
+// 那里发跨域请求只会拿到 "Failed to fetch",不如直接报 login-page 让 Go 侧
+// 归到「未登录」,日志与登录轮询才不会误判。
 const jsZhsAICourses = `async (secretStr) => {
+  if (!/(^|\.)zhihuishu\.com$/.test(location.hostname)) {
+    return JSON.stringify({ok: false, why: 'login-page'});
+  }
   try {
     const r = await fetch('` + zhsAICourseAPI + `', {
       method: 'POST', credentials: 'include',

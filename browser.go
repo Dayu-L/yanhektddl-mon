@@ -388,7 +388,7 @@ func fetchAitaCourses(s *browserSession) ([]Course, bool) {
 //   阶段 1  延河课堂课程列表 —— 尽力而为,失败沿用缓存
 //   阶段 2  eclass 待办(快路径,/api/todos)—— 核心数据,必须成功
 //   阶段 3  深度扫描(可选)—— 逐课程并行扫,补齐已完成/已过期/问卷
-//   阶段 4  智慧树智慧课程的作业/考试/话题讨论 —— 增量数据源,失败只记日志
+//   阶段 4  智慧树(共享课 + 智慧课程)的作业/考试/话题讨论 —— 增量数据源,失败只记日志
 //
 // 未登录 -> errNotLoggedIn;成功 -> 结构化结果。
 func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
@@ -475,7 +475,7 @@ func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
 		}
 	}
 
-	// ---- 阶段 4:智慧树(在线学堂)智慧课程 ----
+	// ---- 阶段 4:智慧树(在线学堂)共享课 + 智慧课程 ----
 	// 放在最后:它会把浏览器导航到智慧树域,不能影响上面的 eclass 抓取。
 	// 该平台未登录/接口异常都只跳过,不阻死延河课堂的主流程。
 	zhsSkipped := false
@@ -485,7 +485,7 @@ func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
 	} else if len(ais) > 0 {
 		courses = append(courses, ais...)
 		items = append(items, aiItems...)
-		fmt.Printf(">> 智慧树智慧课程:%d 门课,任务 %d 条\n", len(ais), len(aiItems))
+		fmt.Printf(">> 智慧树:%d 门课,任务 %d 条\n", len(ais), len(aiItems))
 	}
 	return &collectResult{Courses: courses, Items: items,
 		Submitted: submitted, Deep: deep, ZhsSkipped: zhsSkipped}, nil
@@ -593,14 +593,14 @@ func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error)
 	// 探测本身会导航到学生首页,所以仅在「被跳过」时做,避免白跑一趟。
 	if visible && res.ZhsSkipped {
 		if ensureZhsLogin(s) {
-			fmt.Println(">> 智慧树:登录成功,补抓智慧课程")
+			fmt.Println(">> 智慧树:登录成功,补抓共享课与智慧课程")
 			cs, its, zerr := collectZhihuishu(s, deep)
 			if zerr != nil {
 				logZhsSkip(zerr)
 			} else {
 				res.Courses = append(res.Courses, cs...)
 				res.Items = append(res.Items, its...)
-				fmt.Printf(">> 智慧树智慧课程:%d 门课,任务 %d 条\n", len(cs), len(its))
+				fmt.Printf(">> 智慧树:%d 门课,任务 %d 条\n", len(cs), len(its))
 			}
 		} else {
 			fmt.Println(">> 已跳过智慧树:本次不抓取智慧课程")

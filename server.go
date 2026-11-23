@@ -22,9 +22,10 @@ var faviconPNG []byte
 // 把 ddl_data.json 变成 dashboard.html 使用的 JSON(对应 python snapshot())
 
 type jrow struct {
-	Course string `json:"course"`
-	Kind   string `json:"kind"`
-	Title  string `json:"title"`
+	Course   string `json:"course"`
+	Kind     string `json:"kind"`
+	Platform string `json:"platform"` // 乐学 / 智慧树
+	Title    string `json:"title"`
 	End    string `json:"end"`
 	Status string `json:"status"`
 	URL    string `json:"url"`
@@ -38,7 +39,7 @@ type jrow struct {
 func jrows(rs []*Row) []jrow {
 	out := make([]jrow, 0, len(rs))
 	for _, r := range rs {
-		out = append(out, jrow{r.Course, r.Kind, r.Title,
+		out = append(out, jrow{r.Course, r.Kind, r.Platform, r.Title,
 			r.End.Format(time.RFC3339), r.Status, r.URL, r.Done, r.NoNeed, r.Full,
 			ignoreKey(r.Zy, r.ID), r.AutoIgnored})
 	}

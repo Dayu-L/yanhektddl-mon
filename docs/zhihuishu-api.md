@@ -102,7 +102,7 @@ kg-* 用 `{code, message, data, traceId}`。
 
 ```
 POST https://onlineservice-api.zhihuishu.com/gateway/t/v1/student/course/share/queryShareCourseInfo
-payload: {"status":0,"pageNo":1,"pageSize":5}          # status: 0=进行中, 1=已完成
+payload: {"status":0,"pageNo":1,"pageSize":50}     # status: 0=进行中, 1=已完成
 ```
 
 响应：`result.totalCount`、`result.courseOpenDtos[]`，关键字段：
@@ -118,6 +118,19 @@ payload: {"status":0,"pageNo":1,"pageSize":5}          # status: 0=进行中, 1=
 
 实测结果：`status:0` 正常返回在学课程；`status:1` 返回 `totalCount:0`（无已完成课程）。
 
+#### 作业考试页深链（recruitId 编码）【实测】
+
+站点点击「作业考试」时打开的页面是：
+
+```
+https://onlineexamh5new.zhihuishu.com/stuExamWeb.html#/webExamList?recruitId=<code>
+code = base64( AES-128-ECB( key="86cc793c53dc851b", PKCS7(recruitId) ) )   # 再 URL 转义
+```
+
+这个编码串接口不返回，只能自己算：拿本人 `recruitId`（如 doc 中的占位值）按上式加密后 base64，
+与站点实际跳转 URL 逐字节一致【实测】。它是 AES-ECB 单块、固定密钥，与该平台的 `encrypt()`
+工具函数同源，和 §2.1 的两套 CBC 密钥不同。
+
 #### 作业列表【实测】
 
 ```
@@ -125,11 +138,12 @@ POST https://studentexam-api.zhihuishu.com/studentExam/gateway/t/v1/student/getS
 payload: {"recruitId":"<recruitId>","courseId":<courseId>,"flag":1,"pageSize":100,"pageNum":0}
 ```
 
+- **类型要注意**：`recruitId` 是字符串、`courseId` 是数字（照抄站点请求）；写反了会解密失败。
 - `flag=1`：未提交（待办）；`flag=2`：已提交。
 - `flag=2` 响应：`rt.studentHomeworkList[]`，字段含
   `id, examId, examName, cpOrderNumber`(章节名), `endDate`(截止时间，`YYYY-MM-DD HH:MM:SS`), `startTime`,
   `state`(4=已完成), `score, totalScore, oneHundredPont, problemNum, chapterId, courseId, courseName, examUserName`。
-- `flag=1` 且无待交时响应仅 `rt:{next:-1}`，**不带** `studentHomeworkList`（列表字段何时出现【待补】）。
+- `flag=1` 且无待交时响应仅 `rt:{next:-1}`，**不带** `studentHomeworkList`。
 
 #### 考试列表【实测】
 
@@ -144,6 +158,16 @@ payload: {"courseId":<courseId>,"recruitId":"<recruitId>","flag":1}     # flag �
 
 注意：该接口的 payload 必须含 `recruitId`，缺参会抛
 `java.lang.NullPointerException … GatewayStudentController.getStudentFinalExam`【实测】。
+
+#### 两个必须先知道的坑【实测】
+
+1. **这两个网关要各自域下的会话 Cookie**。只有 `.zhihuishu.com` 的 CAS Cookie 时，课程列表能通，
+   但作业/考试会返回**智慧树登录页的 HTML（HTTP 200）**。必须先真正打开一次作业考试页
+   （上面那条深链）等几秒，让页面自己把 `studentexam-api` / `taurusexam-api` 的会话 Cookie 种下来。
+   实现里叫「预热」（`zhsWarmUpExamHosts`）。
+2. **不要在页面里 `fetch` 这两个网关**。同一会话在页面内发会得到 `TypeError: Failed to fetch`
+   （风控/预检层面被拦），而在 Go 侧带同样的 Cookie 直接发 HTTP 就正常。因此共享课一律走
+   Go 侧 `net/http`（Cookie 从 CDP 取，含 HttpOnly），不经过页面。
 
 #### 未提交考试（免签备用）【实测】
 
@@ -262,8 +286,9 @@ payload: {}   # 实测同样 200
    则作业/考试也不能只看查询侧 `status`,需改看 `examStatus`。
 3. 是否真存在 `taskType=2` 的考试数据(当前账号无考试,只能确认接口返回 200)。
 4. `get-exam-todo-tasks` / `get-all-exam-todo-tasks` 非空时的字段。
-5. 共享课的作业/考试(密钥已破解,尚未实现,见 §2.1)。
+5. 共享课作业/考试的「未提交」非空样例（当前账号那门课已全部提交），仅验证了空列表形态。
 6. 课程列表里的 `secret` 字段用途。
+7. 共享课的 `courseEndTime` 是否应作为「课程关闭时间」展示（当前 `EndAt` 留 0，未混入报告）。
 
 **风险**：
 
@@ -271,8 +296,10 @@ payload: {}   # 实测同样 200
    Go 侧已把两对常量集中在 `zhihuishu.go`,解密失败会体现在「aes加密参数异常」的报错里。
 2. 智慧课程的 `window.labc` / `window.yxyz` 依赖页面已加载 SDK;若改版后符号改名,
    需重新定位(`aesUtil`/`rsaUtil`/`labc2` 是同时存在的备选符号)。
-3. 未验证会话过期后的行为(CAS 静默续期链是否会影响页面内 `fetch`)。
-4. 抓取频率需克制:上述接口均为只读列表,但学生首页本身并发请求较多,
+3. 未验证会话过期后的行为（CAS 静默续期链是否会影响页面内 `fetch`）。
+4. 共享课的两个网关带风控：依赖「预热」拿到的域名级 Cookie，若平台调整 Cookie 下发方式，
+   会表现为「接口返回登录页 HTML」，日志里会明说（`looksLikeHTML` 分支）。
+5. 抓取频率需克制：上述接口均为只读列表，但学生首页本身并发请求较多，
    轮询间隔不宜低于现有延河策略。
 
 ---
@@ -281,12 +308,14 @@ payload: {}   # 实测同样 200
 
 | 关注点 | 位置 |
 | --- | --- |
-| `secretStr` 加密、课程/任务映射、智慧课程抓取流程 | `zhihuishu.go`(`aesSecret` / `collectZhihuishu` / `zhsItemFromTask`) |
-| 登录态探测与登录向导第 3 步(轮询 `jsZhsAICourses`) | `zhihuishu.go` 的 `zhsProbe`, `browser.go` 的 `waitLoginZhihuishu` / `ensureZhsLogin` |
-| 两段页面 JS(课程列表、任务列表) | `js.go` 的 `jsZhsAICourses` / `jsZhsAITasks` |
-| 接入抓取主流程(阶段性、失败只自动跳过) | `browser.go` 的 `tryCollect` 阶段 4 + `collectSnapshotMode` 的补抓 |
-| 非延河平台的任务字段(`status` / `url`) | `types.go` 的 `Item`、`report.go` 的 `buildReport` |
-| 单元测试(密钥向量、字段映射、报告行为、未登录判定) | `zhihuishu_test.go` |
+| `secretStr` 加密（CBC）、课程/任务映射、智慧课程抓取 | `zhihuishu.go`（`aesSecret` / `collectZhihuishu` / `collectZhsAI` / `zhsItemFromTask`） |
+| 共享课：ECB 编码、payload 构造、Go 侧 HTTP、预热、解析 | `zhihuishu_share.go`（`aesSecretECB` / `collectZhsShare` / `newZhsHTTP` / `zhsWarmUpExamHosts`） |
+| 登录态探测与登录向导第 3 步（轮询 `jsZhsAICourses`） | `zhihuishu.go` 的 `zhsProbe`，`browser.go` 的 `waitLoginZhihuishu` / `ensureZhsLogin` |
+| 页面 JS（课程列表、任务列表） | `js.go` 的 `jsZhsAICourses` / `jsZhsAITasks` |
+| 接入抓取主流程（阶段性、失败只自动跳过、登录后补抓） | `browser.go` 的 `tryCollect` 阶段 4 + `collectSnapshotMode` |
+| 非乐学平台的任务字段（`status` / `url`）与数据源标识 | `types.go` 的 `Item` / `Row.Platform` / `platformOf`、`report.go` 的 `buildReport` |
+| 速查页数据源标签与筛选 | `server.go` 的 `jrow`、`web/dashboard.html` 的 `platTag` / `renderFilters` / `filterData` |
+| 单元测试（密钥向量、字段映射、报告行为、未登录判定） | `zhihuishu_test.go` / `zhihuishu_share_test.go` |
 
 ---
 
@@ -309,9 +338,11 @@ func aesSecret(payload string, key, iv string) string {
 }
 
 // 学生首页网关
-secret := aesSecret(`{"status":0,"pageNo":1,"pageSize":5}`, "7q9oko0vqb3la20r", "1g3qqdh4jvbskb9x")
+secret := aesSecret(`{"status":0,"pageNo":1,"pageSize":50}`, "7q9oko0vqb3la20r", "1g3qqdh4jvbskb9x")
 // 作业/考试
 secret = aesSecret(`{"courseId":<courseId>,"recruitId":"<recruitId>","flag":1}`, "onbfhdyvz8x7otrp", "1g3qqdh4jvbskb9x")
+// 作业考试页深链里的 recruitId（ECB，注意没有 IV）
+code := base64.StdEncoding.EncodeToString(aesECB([]byte("<recruitId>"), []byte("86cc793c53dc851b")))
 ```
 
 首次写实现时，用 `{}` → `yaVfYIJIdqrHDXsDL3vsYw==` 这条断言做单元测试即可锁定密钥与填充正确。

@@ -26,11 +26,14 @@ var (
 		"homework":      "作业",
 		"exam":          "测验/习题",
 		"questionnaire": "问卷",
-		// 智慧树(在线学堂)智慧课程的任务类型
+		// 智慧树(在线学堂)的任务类型(共享课与智慧课程共用)
 		kindAIHomework: "作业",
 		kindAIExam:     "考试",
 		kindAITopic:    "话题讨论",
 	}
+	// platformNames 数据来源标识:速查页据此打标签并做筛选
+	platformEclass = "乐学"
+	platformZhs    = "智慧树"
 )
 
 // ---------------------------------------------------------------- 文本处理
@@ -188,19 +191,20 @@ func buildReport(courses []Course, items []Item, submitted map[string][]interfac
 		}
 
 		rep.Rows = append(rep.Rows, &Row{
-			Course: course,
-			Kind:   kindNames[it.Kind],
-			Title:  it.Title,
-			End:    end,
-			Done:   done,
-			Status: status,
-			NoNeed: noNeed,
-			Ignored: ignored[ignoreKey(it.Zy, idString(it.ID))],
-			ID:     idString(it.ID),
-			Desc:   truncate(desc, 60),
-			Full:   descToText(it.Desc),
-			URL:    url,
-			Zy:     it.Zy,
+			Course:   course,
+			Kind:     kindNames[it.Kind],
+			Platform: platformOf(it.Zy),
+			Title:    it.Title,
+			End:      end,
+			Done:     done,
+			Status:   status,
+			NoNeed:   noNeed,
+			Ignored:  ignored[ignoreKey(it.Zy, idString(it.ID))],
+			ID:       idString(it.ID),
+			Desc:     truncate(desc, 60),
+			Full:     descToText(it.Desc),
+			URL:      url,
+			Zy:       it.Zy,
 		})
 	}
 	sort.SliceStable(rep.Rows, func(i, j int) bool {
@@ -280,7 +284,7 @@ func mdTable(rows []*Row, now time.Time) string {
 func writeReports(rep *Report, urgentDays int) {
 	now := rep.Now
 	var L []string
-	L = append(L, "# 📌 延河课堂 / 乐学 DDL 监控报告\n")
+	L = append(L, "# 📌 延河课堂 / 乐学 / 智慧树 DDL 监控报告\n")
 	L = append(L, fmt.Sprintf("> 生成时间:%s (北京时间)  ", now.Format("2006-01-02 15:04:05")))
 	unfinished := 0
 	ignoredCount := 0

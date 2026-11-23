@@ -239,7 +239,8 @@ func zhsWantedLists(deep bool) [][2]int {
 func zhsAuthFailure(why string) bool {
 	return strings.Contains(why, "401") ||
 		strings.Contains(why, "not-json") ||
-		strings.Contains(why, "HTTP 302")
+		strings.Contains(why, "HTTP 302") ||
+		strings.Contains(why, "login-page")
 }
 
 // zhsSecret 学生首页网关的 secretStr。payload 固定为空对象:本程序只用它
@@ -341,18 +342,55 @@ func evalZhsAITasks(s *browserSession, courseID string, lists [][2]int) (map[str
 	return nil, errZhsNotLoggedIn
 }
 
-// collectZhihuishu 抓取智慧课程(作业测试 / 考试 / 话题讨论)。
+// collectZhihuishu 抓取智慧树两个子数据源:共享课(学分课)与智慧课程。
 //
-// 全程「尽力而为」:未登录、SDK 缺失、接口报错都只返回错误,由调用方记日志
-// 后跳过 —— 智慧树是增量数据源,不能因为它让延河课堂的主流程失败。
-// 注意:本函数会把浏览器导航到智慧树域,应在延河课堂各阶段之后调用。
+// 全程「尽力而为」:未登录直接返回 errZhsNotLoggedIn(由调用方弹登录);
+// 某个子源接口异常只记日志、另一个照抓 —— 不能因为一个子源拖死整个智慧树。
+// 注意:本函数会把浏览器导航到智慧树域,应在延河课堂/locate 各阶段之后调用。
 func collectZhihuishu(s *browserSession, deep bool) ([]Course, []Item, error) {
+	// 全程停在智慧课程域(ai-smart-course-student-pro):
+	//   · 它的 SPA 不会像学生首页那样被弹到 passport 登录页(实测学生首页加载后
+	//     会跳孤,导致后续请求跨域失败);
+	//   · 共享课的三个网关 + 智慧课程列表 + kg-* 任务接口在这个域下 CORS 都通,且
+	//     window.labc / window.yxyz 已就位。
+	if err := s.navigate(zhsAICourseOrigin+"/", 0); err != nil {
+		return nil, nil, fmt.Errorf("打开智慧树失败:%w", err)
+	}
+
+	var courses []Course
+	var items []Item
+
+	sc, si, err := collectZhsShare(s, deep)
+	switch {
+	case err == nil:
+		courses = append(courses, sc...)
+		items = append(items, si...)
+	case errors.Is(err, errZhsNotLoggedIn):
+		return nil, nil, err
+	default:
+		logger.Printf("[智慧树] 共享课已跳过:%v", err)
+	}
+
+	ac, ai, err := collectZhsAI(s, deep)
+	switch {
+	case err == nil:
+		courses = append(courses, ac...)
+		items = append(items, ai...)
+	case errors.Is(err, errZhsNotLoggedIn) && len(items) == 0:
+		return nil, nil, err
+	case err != nil:
+		// 共享课已经拿到数据,智慧课程这一路失败就只记日志
+		logger.Printf("[智慧树] 智慧课程已跳过:%v", err)
+	}
+	return courses, items, nil
+}
+
+// collectZhsAI 抓智慧课程(作业测试 / 考试 / 话题讨论)。
+// 调用方必须已把浏览器停到智慧课程域(见 collectZhihuishu)。
+func collectZhsAI(s *browserSession, deep bool) ([]Course, []Item, error) {
 	secret, err := zhsSecret()
 	if err != nil {
 		return nil, nil, err
-	}
-	if err := s.navigate(zhsHomeURL, 0); err != nil {
-		return nil, nil, fmt.Errorf("打开学生首页失败:%w", err)
 	}
 	courses, err := evalZhsAICourses(s, secret)
 	if err != nil {
@@ -362,16 +400,9 @@ func collectZhihuishu(s *browserSession, deep bool) ([]Course, []Item, error) {
 		return nil, nil, nil
 	}
 
-	// 任务接口的签名 SDK 只在智慧课程域可用:借第一门课的深链进入该域,
-	// 之后所有课程都用同一个页面调接口(courseId 是参数,不需要逐课导航)。
-	jump := zhsAICourseOrigin + "/"
-	if u := strings.TrimSpace(courses[0].LinkURL); u != "" {
-		jump = u
-	}
-	if err := s.navigate(jump, 0); err != nil {
-		return nil, nil, fmt.Errorf("打开智慧课程页失败:%w", err)
-	}
-
+	// 任务接口靠页面主世界的 window.yxyz / window.labc 签名。这两个全局函数在
+	// 智慧课程域的 SPA 页上就已就位(实测首页与课程页都有),因此不需要逐课导航;
+	// 万一以后改版只在课程页注入,这里会回侉 no-sdk —— 再按需补一次深链跳转。
 	lists := zhsWantedLists(deep)
 	var outCourses []Course
 	var outItems []Item

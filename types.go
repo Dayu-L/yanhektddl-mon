@@ -45,7 +45,8 @@ type Snapshot struct {
 
 type Row struct {
 	Course string
-	Kind   string // 作业 / 测验/习题 / 问卷
+	Kind   string // 作业 / 测验/习题 / 问卷 / 考试 / 话题讨论
+	Platform string // 乐学 / 智慧树(数据来源,速查页用于标识与筛选)
 	Title  string
 	End    time.Time
 	Status string
@@ -79,6 +80,15 @@ type Report struct {
 }
 
 // idString 把 JS 传来的 id(可能是数字或字符串)规范成字符串
+// platformOf 由任务的 zy 前缀判定数据来源。
+// 乐学(zy-eclass)的任务 zy 是纯数字课程号;智慧树的带平台前缀(见 zhihuishu.go)。
+func platformOf(zy string) string {
+	if strings.HasPrefix(zy, "zhs:") {
+		return platformZhs
+	}
+	return platformEclass
+}
+
 func idString(v interface{}) string {
 	switch x := v.(type) {
 	case string:

@@ -2,7 +2,7 @@
 
 ## 程序功能(一句话)
 
-延河课堂/北理工乐学 + 智慧树智慧课程的 DDL 监控:单文件 Go exe 驱动系统 Edge 抓取本人课程作业/考试/话题讨论截止日期,本地服务 + 托盘 + 速查窗口,可选每日 9:00 通知。详细说明见 [README.md](README.md),平台接口细节见 [docs/zhihuishu-api.md](docs/zhihuishu-api.md)。
+延河课堂/北理工乐学 + 智慧树(共享课、智慧课程)的 DDL 监控:单文件 Go exe 驱动系统 Edge 抓取本人课程作业/考试/话题讨论截止日期,本地服务 + 托盘 + 速查窗口,可选每日 9:00 通知。详细说明见 [README.md](README.md),平台接口细节见 [docs/zhihuishu-api.md](docs/zhihuishu-api.md)。
 
 ## 项目结构与调试
 
@@ -10,7 +10,8 @@
 yanhektddl-mon/
 ├─ main.go               # 入口:参数分发;go:embed web/ 页面
 ├─ browser.go / js.go    # 抓取:chromedp 驱动系统 Edge;平台接口 JS 片段
-├─ zhihuishu.go          # 智慧树智慧课程:secretStr 加密 + 作业/考试/话题讨论抓取(新数据源)
+├─ zhihuishu.go          # 智慧树:secretStr 加密、登录探测、智慧课程(作业/考试/话题讨论)
+├─ zhihuishu_share.go    # 智慧树共享课:recruitId 编码、Go 侧 HTTP、网关预热
 ├─ report.go / types.go  # 数据模型、临期分组规则、Markdown/CSV 报告
 ├─ server.go / desktop.go# 本地 HTTP 服务(127.0.0.1:8765)、桌面模式、窗口开关
 ├─ tray.go / login.go    # 系统托盘、首次登录向导
@@ -94,4 +95,5 @@ gh release upload v0.4.1 dist\yanhektddl-setup-0.4.1.exe -R Dayu-L/yanhektddl-mo
 - 新增 Windows 能力优先写进 `platform_windows.go`(纯 syscall);**禁止引入需要 CGO 的依赖**(本机无 gcc,且会破坏单文件分发)
 - 抓取逻辑改动的验收标准:`--fetch` 全链路真实跑通,不是"编译通过"
 - 新增数据源一律「尽力而为」:未登录/接口异常只能记日志跳过(参考 `browser.go` 阶段 4 + `logZhsSkip`),不得让延河/乐学的核心流程失败
+- 新增数据源时必须给 `Row.Platform` 赋值(速查页据此打标签与筛选),并在 `docs/` 同步实测结论
 - 平台密钥、签名算法等平台常量集中在对应源文件头部(如 `zhihuishu.go` 的 `zhsSiteAESKey`),并在 `docs/` 记下实测依据;平台换包失效时先查这类常量

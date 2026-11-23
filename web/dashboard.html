@@ -57,9 +57,28 @@ a { color: inherit; }
   font-size: 24px; font-weight: 600; line-height: 30px; letter-spacing: -0.01em;
 }
 .finding { color: var(--muted); margin-top: 4px; max-width: 62ch; }
+.finding:empty { display: none; }
 .stampbox { margin-left: auto; text-align: right; flex: none; padding-top: 4px; }
 .stamp { color: var(--muted); font-size: 12px; }
 .stamp .num { color: var(--text); }
+
+/* ============ 数据源标签与筛选 ============ */
+.plat {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 6px;
+  font-size: 11px; line-height: 16px; vertical-align: 1px;
+  background: #eef3fb; color: #3a5f9e;
+}
+.plat.zhs { background: #eaf6ee; color: #2f7a4d; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 var(--gap); }
+.chips[hidden] { display: none; }
+.chip {
+  border: 1px solid var(--control); background: transparent; color: var(--muted);
+  border-radius: 999px; padding: 4px 12px; font-size: 12px; line-height: 18px;
+  font-family: inherit; cursor: pointer;
+}
+.chip:hover { border-color: var(--text); color: var(--text); }
+.chip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
+.chip .n { opacity: .65; margin-left: 4px; }
 
 /* ============ 登录失效横幅 ============ */
 .relogin {
@@ -257,12 +276,14 @@ button { font: inherit; }
     <a href="/login?from=banner">重新登录 →</a>
   </div>
 
+  <div class="chips" id="filters" hidden></div>
+
   <div class="grid">
     <main class="col-main" id="main"></main>
     <aside class="col-rail" id="rail"></aside>
   </div>
 
-  <footer class="foot">延河课堂 × 乐学 · 数据来自平台官方接口 · <span id="footAuto">自动巡检</span>,也可随时手动刷新</footer>
+  <footer class="foot">延河课堂 × 乐学 × 智慧树 · 数据来自平台官方接口 · <span id="footAuto">自动巡检</span>,也可随时手动刷新</footer>
 </div>
 
 <script>
@@ -313,6 +334,13 @@ const icon = (name, size) =>
 
 /* ---------- 渲染 ---------- */
 let DATA = null;
+let FILTER = "all"; // 数据源筛选:all / 乐学 / 智慧树
+const PLAT_CLASS = { "智慧树": "plat zhs" };
+
+// 数据源小标签:一眼看出这条任务来自乐学还是智慧树
+const platTag = r => r && r.platform
+  ? '<span class="' + (PLAT_CLASS[r.platform] || "plat") + '">' + esc(r.platform) + "</span>"
+  : "";
 
 function rowHTML(r, opts) {
   opts = opts || {};
@@ -333,7 +361,7 @@ function rowHTML(r, opts) {
   let html = '<div class="row" data-url="' + esc(r.url) + '" role="link" tabindex="0">'
     + '<div style="min-width:0">'
     + '<a class="r-title" href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.title) + '</a>'
-    + '<div class="r-sub">' + esc(r.course) + " · " + esc(r.kind) + (r.no_need ? " · 无需提交" : "") + '</div>'
+    + '<div class="r-sub">' + platTag(r) + esc(r.course) + " · " + esc(r.kind) + (r.no_need ? " · 无需提交" : "") + '</div>'
     + '</div>'
     + '<div class="r-when"><div class="r-date num">' + fmtDate(end) + '</div>'
     + '<div class="r-left num">' + fmtLeft(end - Date.now()) + '</div></div>'
@@ -366,17 +394,15 @@ function sectionHTML(id, title, rows, opts) {
 }
 
 function render() {
-  const d = DATA;
+  renderFilters(DATA);
+  const d = filterData(DATA, FILTER);
   const main = $("#main"), rail = $("#rail");
   const heroCand = (d.urgent || []).concat(d.week || [], d.later || [], d.unknown || []);
   const hero = heroCand.length ? heroCand.reduce((a, b) => (parseEnd(a.end) <= parseEnd(b.end) ? a : b)) : null;
 
-  /* 标题行:总量概览(最近截止等细节由 hero 卡承载,不在此重复) */
-  const pending = (d.missed || []).length + (d.urgent || []).length
-    + (d.week || []).length + (d.later || []).length + (d.unknown || []).length;
-  $("#finding").textContent = (d.course_count || 0) + " 门课 · "
-    + (d.item_count || 0) + " 项任务 · 待办 " + pending
-    + " 项(已完成与已忽略不计)。";
+  /* 标题行不再放概览小字(总量/分组/各数据源数量分别在筛选胶囊与卡片头里),
+     该位置只给加载中/出错提示用;数据渲染成功就清空 */
+  $("#finding").textContent = "";
   $("#stampTime").textContent = fmtStamp(d.fetched_at);
 
   /* 主列 */
@@ -388,7 +414,7 @@ function render() {
       + '<div class="hero-count" id="heroCount" data-end="' + hero.end + '">—</div>'
       + '<div class="hero-task">'
       + '<a class="hero-title" href="' + esc(hero.url) + '" target="_blank" rel="noopener">' + esc(hero.title) + "</a>"
-      + '<div class="hero-meta">' + esc(hero.course) + " · " + esc(hero.kind) + " · 截止 " + fmtDate(end) + "</div>"
+      + '<div class="hero-meta">' + platTag(hero) + esc(hero.course) + " · " + esc(hero.kind) + " · 截止 " + fmtDate(end) + "</div>"
       + "</div>"
       + '<a class="btn-primary" href="' + esc(hero.url) + '" target="_blank" rel="noopener">去完成 ' + icon("arrow", 15) + "</a>"
       + "</div>";
@@ -416,6 +442,55 @@ function render() {
   document.querySelector(".grid").classList.toggle("single", !rh);
 
   tick();
+}
+
+/* ---------- 数据源筛选 ---------- */
+const ROW_GROUPS = ["missed", "urgent", "week", "later", "unknown", "done", "ignored"];
+
+function platformsOf(d) {
+  const seen = [];
+  for (const k of ROW_GROUPS) {
+    for (const r of d[k] || []) {
+      if (r.platform && seen.indexOf(r.platform) < 0) seen.push(r.platform);
+    }
+  }
+  return seen;
+}
+
+function countOf(d, plat) {
+  let n = 0;
+  for (const k of ROW_GROUPS) {
+    for (const r of d[k] || []) if (plat === "all" || r.platform === plat) n++;
+  }
+  return n;
+}
+
+// 只保留选中数据源的行;头部计数随之重算,避免“筛完还是全局数字”
+function filterData(d, plat) {
+  if (plat === "all") return d;
+  const out = { fetched_at: d.fetched_at };
+  for (const k of ROW_GROUPS) out[k] = (d[k] || []).filter(r => r.platform === plat);
+  const courses = {};
+  for (const k of ROW_GROUPS) {
+    for (const r of out[k]) courses[r.course] = 1;
+  }
+  out.course_count = Object.keys(courses).length;
+  out.item_count = countOf(out, "all");
+  return out;
+}
+
+// 只有一种数据源时不显示筛选(快照里还没有智慧树数据就不会多出一排无用的胶囊)
+function renderFilters(d) {
+  const box = $("#filters");
+  if (!box) return;
+  const plats = platformsOf(d);
+  if (plats.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+  if (FILTER !== "all" && plats.indexOf(FILTER) < 0) FILTER = "all";
+  const chip = (val, label) => '<button class="chip" type="button" data-plat="' + esc(val) +
+    '" aria-pressed="' + (FILTER === val) + '">' + esc(label) +
+    '<span class="n">' + countOf(d, val) + "</span></button>";
+  box.hidden = false;
+  box.innerHTML = chip("all", "全部") + plats.map(p => chip(p, p)).join("");
 }
 
 function fmtStamp(iso) {
@@ -471,6 +546,12 @@ function toggleDetail(btn) {
 }
 
 document.addEventListener("click", e => {
+  const chip = e.target.closest("[data-plat]");
+  if (chip) {
+    FILTER = chip.dataset.plat;
+    render();
+    return;
+  }
   const ig = e.target.closest("[data-ignore]");
   if (ig) { postIgnore(ig.dataset.ignore, true); return; }
   const un = e.target.closest("[data-unignore]");
