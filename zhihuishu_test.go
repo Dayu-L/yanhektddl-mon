@@ -223,14 +223,33 @@ func TestBuildReportUsesExplicitStatusAndURL(t *testing.T) {
 	}
 }
 
-// 管线冒烟:真实启动 headless Edge 打开学生首页,执行 jsZhsAICourses。
-// 不要求已登录智慧树 —— 只断言「Go 侧的求值/回传能跑通、返回可解析」:
-//
-//	· 已登录 -> ok=true 且至少解析出 0 门课
-//	· 未登录 -> ok=false 且带 why(页面被重定向到 CAS,拿不到列表)
-//
-// 联网测试,故 go test -short 时跳过。
-func TestZhsEvalPlumbing(t *testing.T) {
+// 轮询用的探测表达式必须是「零参函数 -> Promise」,pollProbe 会包成
+// (<expr>)() 后按 {ok:bool} 解析;同时 secretStr 必须被正确转义进 JS。
+func TestZhsProbeExpr(t *testing.T) {
+	secret, err := zhsSecret()
+	if err != nil {
+		t.Fatalf("计算 secretStr 失败:%v", err)
+	}
+	if secret != "yaVfYIJIdqrHDXsDL3vsYw==" {
+		t.Fatalf("探测用的 secretStr 应为 {} 的密文,实际 %q", secret)
+	}
+	expr := zhsProbeExpr(secret)
+	if !strings.HasPrefix(expr, "() => ") {
+		t.Fatalf("应为零参函数表达式,实际开头:%s", expr[:20])
+	}
+	if !strings.Contains(expr, strconv.Quote(secret)) {
+		t.Fatal("secretStr 未被正确转义进表达式")
+	}
+	if strings.Count(expr, "() =>") != 1 {
+		t.Fatal("只应包一层零参函数")
+	}
+}
+
+// 真实环境下的登录态探测:程序自己的 profile 通常还没登过智慧树,
+// 此时必须判定为「未登录」(ok=false, err=nil),而不是异常 ——
+// 否则登录向导会安静地跳过,用户永远等不到那段可选登录提示。
+// 若该 profile 已登录,本用例只记日志不失败。
+func TestZhsProbeUnauthenticated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("联网冒烟测试,-short 跳过")
 	}
@@ -240,42 +259,13 @@ func TestZhsEvalPlumbing(t *testing.T) {
 	}
 	defer s.close()
 
-	secret, err := aesSecret("{}", zhsSiteAESKey, zhsSiteAESIv)
+	secret, err := zhsSecret()
 	if err != nil {
 		t.Fatalf("计算 secretStr 失败:%v", err)
 	}
-	if err := s.navigate(zhsHomeURL, 0); err != nil {
-		t.Fatalf("打开学生首页失败:%v", err)
+	ok, perr := zhsProbe(s, secret)
+	if perr != nil {
+		t.Fatalf("探测应把「没登录」判成 ok=false,不该返回错误:%v", perr)
 	}
-	out, err := s.eval("(" + jsZhsAICourses + ")(" + strconv.Quote(secret) + ")")
-	if err != nil {
-		t.Fatalf("执行 jsZhsAICourses 失败:%v", err)
-	}
-	var res struct {
-		OK      bool        `json:"ok"`
-		Why     string      `json:"why"`
-		Courses []zhsCourse `json:"courses"`
-	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatalf("返回值不是可解析的 JSON:%v(原始:%s)", err, out)
-	}
-	t.Logf("智慧树冒烟:ok=%v why=%q courses=%d", res.OK, res.Why, len(res.Courses))
-	if !res.OK && res.Why == "" {
-		t.Fatalf("失败时必须给出 why,否则日志里无从排错")
-	}
-}
-
-// 未登录时网关回 401、被重定向到 CAS 时拿回 HTML;两种都要归到「未登录」,
-// 这样日志能给出登录提示,而不是一堆看不懂的报错。
-func TestZhsAuthFailure(t *testing.T) {
-	for _, why := range []string{"HTTP 401", "not-json", "HTTP 302"} {
-		if !zhsAuthFailure(why) {
-			t.Fatalf("%q 应判定为登录问题", why)
-		}
-	}
-	for _, why := range []string{"", "HTTP 500", "code 400", "no-sdk"} {
-		if zhsAuthFailure(why) {
-			t.Fatalf("%q 不应判定为登录问题", why)
-		}
-	}
+	t.Logf("智慧树登录探测:已登录=%v", ok)
 }

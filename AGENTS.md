@@ -45,7 +45,7 @@ curl http://127.0.0.1:8765/api/status  # 服务是否存活
 ./installer/build-installer.ps1        # 产出 dist/yanhektddl-setup-<版本>.exe
 ```
 
-常见排错:抓取失败先看 `server.log`;"chrome failed to start" 多为 profile 锁残留,程序已内置清锁重试,仍失败就杀掉命令行含 `browser_profile` 的 msedge 进程后重试。日志里出现 "[智慧树] 未登录或会话失效" 说明该数据源没登过录:`--fetch --visible` 在弹出的 Edge 里登录一次智慧树即可(不影响乐学抓取,只是少一个数据源)。
+常见排错:抓取失败先看 `server.log`;"chrome failed to start" 多为 profile 锁残留,程序已内置清锁重试,仍失败就杀掉命令行含 `browser_profile` 的 msedge 进程后重试。日志里出现 "[智慧树] 未登录或会话失效" 说明该数据源没登记:`--fetch --visible` 或登录向导会依次给乐学(必需)→延河(可选)→智慧树(可选)三次登录机会,已登录的会自动跳过提示;不登录只是少一个数据源。
 
 ## Git 操作规范
 

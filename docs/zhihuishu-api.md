@@ -282,8 +282,9 @@ payload: {}   # 实测同样 200
 | 关注点 | 位置 |
 | --- | --- |
 | `secretStr` 加密、课程/任务映射、智慧课程抓取流程 | `zhihuishu.go`(`aesSecret` / `collectZhihuishu` / `zhsItemFromTask`) |
+| 登录态探测与登录向导第 3 步(轮询 `jsZhsAICourses`) | `zhihuishu.go` 的 `zhsProbe`, `browser.go` 的 `waitLoginZhihuishu` / `ensureZhsLogin` |
 | 两段页面 JS(课程列表、任务列表) | `js.go` 的 `jsZhsAICourses` / `jsZhsAITasks` |
-| 接入抓取主流程(阶段性、失败只自动跳过) | `browser.go` 的 `tryCollect` 阶段 4 |
+| 接入抓取主流程(阶段性、失败只自动跳过) | `browser.go` 的 `tryCollect` 阶段 4 + `collectSnapshotMode` 的补抓 |
 | 非延河平台的任务字段(`status` / `url`) | `types.go` 的 `Item`、`report.go` 的 `buildReport` |
 | 单元测试(密钥向量、字段映射、报告行为、未登录判定) | `zhihuishu_test.go` |
 

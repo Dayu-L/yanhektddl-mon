@@ -25,6 +25,7 @@ const (
 	pipeBootTO   = 12 * time.Second // 管道模式首次尝试上限:旧版浏览器不认 Windows 管道参数,尽快回退
 	todosWaitTO  = 15 * time.Second // eclass 待办轮询窗口:覆盖会话过期后的 CAS 静默续期重定向链
 	aitaLoginTO  = 90 * time.Second // 登录向导中延河课堂(可选步骤)的等待上限
+	zhsLoginTO   = 120 * time.Second // 登录向导中智慧树(可选数据源)的等待上限:微信扫码/手机号登录预留时间
 )
 
 // preferWebSocket 记录本次运行是否已回退到 WebSocket 传输。
@@ -310,11 +311,49 @@ func waitLoginAita(s *browserSession, timeout time.Duration) bool {
 	return pollProbe(s, jsCheckLogin, portalURL, timeout)
 }
 
+// waitLoginZhihuishu 登录向导第 3 步(可选):登录智慧树在线学堂。
+// 该平台用微信扫码/手机号登录,登录态与乐学的 CAS 互不相干,
+// 所以单独开一次窗口轮询;超时则跳过该可选数据源(智慧课程)。
+func waitLoginZhihuishu(s *browserSession, secret string, timeout time.Duration) bool {
+	_ = s.navigate(zhsHomeURL, 0)
+	s.bringToFront()
+	fmt.Println()
+	fmt.Println("------------------------------------------------------------")
+	fmt.Println(">>> 可选:登录智慧树在线学堂,抓取智慧课程 <<<")
+	fmt.Println("    可扫微信 / 手机号登录;只读取本人的作业测试、考试、话题讨论。")
+	fmt.Printf("    %d 秒后自动继续(不登录则跳过该数据源)\n", int(timeout.Seconds()))
+	fmt.Println("------------------------------------------------------------")
+	fmt.Println()
+	return pollProbe(s, zhsProbeExpr(secret), zhsHomeURL, timeout)
+}
+
+// ensureZhsLogin 给可选数据源「智慧树」一次登录机会:已登录则直接返回,
+// 未登录才弹提示;探测异常(网络/接口改动)不打扰用户,静默返回 false,
+// 后面阶段 4 会再记一次具体原因。
+func ensureZhsLogin(s *browserSession) bool {
+	secret, err := zhsSecret()
+	if err != nil {
+		logger.Printf("[智慧树] 签名参数计算失败:%v", err)
+		return false
+	}
+	ok, perr := zhsProbe(s, secret)
+	if ok {
+		fmt.Println(">> 智慧树:已登录")
+		return true
+	}
+	if perr != nil {
+		logger.Printf("[智慧树] 登录探测异常:%v", perr)
+		return false
+	}
+	return waitLoginZhihuishu(s, secret, zhsLoginTO)
+}
+
 type collectResult struct {
-	Courses   []Course
-	Items     []Item
-	Submitted map[string][]interface{}
-	Deep      bool
+	Courses    []Course
+	Items      []Item
+	Submitted  map[string][]interface{}
+	Deep       bool
+	ZhsSkipped bool // 可选数据源「智慧树」本次被跳过(未登录/接口异常)
 }
 
 // fetchAitaCourses 延河课堂课程列表(含课程关闭时间 EndAt)。
@@ -439,15 +478,17 @@ func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
 	// ---- 阶段 4:智慧树(在线学堂)智慧课程 ----
 	// 放在最后:它会把浏览器导航到智慧树域,不能影响上面的 eclass 抓取。
 	// 该平台未登录/接口异常都只跳过,不阻死延河课堂的主流程。
+	zhsSkipped := false
 	if ais, aiItems, zhsErr := collectZhihuishu(s, deep); zhsErr != nil {
 		logZhsSkip(zhsErr)
+		zhsSkipped = true
 	} else if len(ais) > 0 {
 		courses = append(courses, ais...)
 		items = append(items, aiItems...)
 		fmt.Printf(">> 智慧树智慧课程:%d 门课,任务 %d 条\n", len(ais), len(aiItems))
 	}
 	return &collectResult{Courses: courses, Items: items,
-		Submitted: submitted, Deep: deep}, nil
+		Submitted: submitted, Deep: deep, ZhsSkipped: zhsSkipped}, nil
 }
 
 // ---------------------------------------------------------------- 主流程
@@ -501,6 +542,9 @@ func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error)
 		if !waitLoginAita(s, aitaLoginTO) {
 			fmt.Println(">> 已跳过延河课堂登录:课程关闭时间沿用上次快照")
 		}
+		if !ensureZhsLogin(s) {
+			fmt.Println(">> 已跳过智慧树:本次不抓取智慧课程")
+		}
 		res, err := tryCollect(s, deep)
 		if err == errNotLoggedIn {
 			return nil, errors.New("登录后仍未获取到有效会话,请检查账号")
@@ -512,21 +556,26 @@ func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error)
 	}
 
 	res, err := tryCollect(s, deep)
-	if err == errNotLoggedIn && !visible { // 需要人工登录 -> 换可见窗口
-		s.close()
-		s = nil
-		// 留足时间让 Edge 释放 profile 锁;再加上 openBrowser 内部约 10 秒
-		// 退避重试,慢机器也能自愈。
-		time.Sleep(2 * time.Second)
-		s, err = openBrowser(true)
-		if err != nil {
-			return nil, err
+	if err == errNotLoggedIn { // 需要人工登录:能开可见窗口就换一个
+		if !visible {
+			s.close()
+			s = nil
+			// 留足时间让 Edge 释放 profile 锁;再加上 openBrowser 内部约 10 秒
+			// 退避重试,慢机器也能自愈。
+			time.Sleep(2 * time.Second)
+			s, err = openBrowser(true)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if !waitLoginEclass(s, loginWait) {
 			return nil, errors.New("等待统一身份认证超时,未获取到有效会话")
 		}
 		if !waitLoginAita(s, aitaLoginTO) {
 			fmt.Println(">> 已跳过延河课堂登录:课程关闭时间沿用上次快照")
+		}
+		if !ensureZhsLogin(s) {
+			fmt.Println(">> 已跳过智慧树:本次不抓取智慧课程")
 		}
 		res, err = tryCollect(s, deep)
 		if err == errNotLoggedIn {
@@ -535,6 +584,29 @@ func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error)
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	// 可选数据源「智慧树」的登录时机:
+	//   · 无可见窗口(定时巡检/计划任务)没人能登录 —— 只在智慧树被跳过时提示一句;
+	//   · 有可见窗口(--fetch --visible / 登录向导)且阶段 4 确实跳过了 —— 先探登录态,
+	//     没登录才弹提示,登录成功后补抓这一路。
+	// 探测本身会导航到学生首页,所以仅在「被跳过」时做,避免白跑一趟。
+	if visible && res.ZhsSkipped {
+		if ensureZhsLogin(s) {
+			fmt.Println(">> 智慧树:登录成功,补抓智慧课程")
+			cs, its, zerr := collectZhihuishu(s, deep)
+			if zerr != nil {
+				logZhsSkip(zerr)
+			} else {
+				res.Courses = append(res.Courses, cs...)
+				res.Items = append(res.Items, its...)
+				fmt.Printf(">> 智慧树智慧课程:%d 门课,任务 %d 条\n", len(cs), len(its))
+			}
+		} else {
+			fmt.Println(">> 已跳过智慧树:本次不抓取智慧课程")
+		}
+	} else if !visible && res.ZhsSkipped {
+		fmt.Println(">> 提示:运行 --fetch --visible 可登录智慧树,补上智慧课程数据")
 	}
 	return saveCollected(res, deep)
 }

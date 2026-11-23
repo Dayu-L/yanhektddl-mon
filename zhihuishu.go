@@ -242,6 +242,34 @@ func zhsAuthFailure(why string) bool {
 		strings.Contains(why, "HTTP 302")
 }
 
+// zhsSecret 学生首页网关的 secretStr。payload 固定为空对象:本程序只用它
+// 做「课程列表」和「登录态探测」两类请求。
+func zhsSecret() (string, error) {
+	return aesSecret("{}", zhsSiteAESKey, zhsSiteAESIv)
+}
+
+// zhsProbeExpr 拼一个零参的探测表达式给 pollProbe 轮询:
+// 直接复用真实拨取路径(jsZhsAICourses),登录成功就能拿到列表。
+func zhsProbeExpr(secret string) string {
+	return "() => (" + jsZhsAICourses + ")(" + strconv.Quote(secret) + ")"
+}
+
+// zhsProbe 探测智慧树登录态:导航到学生首页 + 试调一次课程列表。
+// 返回 (已登录, 错误);errZhsNotLoggedIn 归为「确实没登录」,
+// 其余错误当异常(网络/接口改动),不要误导用户去登录。
+func zhsProbe(s *browserSession, secret string) (bool, error) {
+	if err := s.navigate(zhsHomeURL, 0); err != nil {
+		return false, err
+	}
+	if _, err := evalZhsAICourses(s, secret); err != nil {
+		if errors.Is(err, errZhsNotLoggedIn) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // evalZhsAICourses 在学生首页里取智慧课程列表。
 // secretStr 由 Go 侧算好传进去;页面 JS 只负责带 Cookie 发请求。
 func evalZhsAICourses(s *browserSession, secret string) ([]zhsCourse, error) {
@@ -319,7 +347,7 @@ func evalZhsAITasks(s *browserSession, courseID string, lists [][2]int) (map[str
 // 后跳过 —— 智慧树是增量数据源,不能因为它让延河课堂的主流程失败。
 // 注意:本函数会把浏览器导航到智慧树域,应在延河课堂各阶段之后调用。
 func collectZhihuishu(s *browserSession, deep bool) ([]Course, []Item, error) {
-	secret, err := aesSecret("{}", zhsSiteAESKey, zhsSiteAESIv)
+	secret, err := zhsSecret()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -374,10 +402,11 @@ func collectZhihuishu(s *browserSession, deep bool) ([]Course, []Item, error) {
 	return outCourses, outItems, nil
 }
 
-// logZhsSkip 统一的「跳过智慧树」日志:未登录时给出一次登录提示。
+// logZhsSkip 统一的「跳过智慧树」日志。登录提示由调用方根据场景决定是否打印
+// (可见窗口才能弹登录,定时巡检没人能操作就不啰喗)。
 func logZhsSkip(err error) {
 	if errors.Is(err, errZhsNotLoggedIn) {
-		logger.Printf("[智慧树] 未登录或会话失效(%v),已跳过。运行 --fetch --visible,在弹出的 Edge 里登录一次智慧树即可", err)
+		logger.Printf("[智慧树] 未登录或会话失效(%v),本次不抓取智慧课程", err)
 		return
 	}
 	logger.Printf("[智慧树] 已跳过:%v", err)
