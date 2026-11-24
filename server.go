@@ -143,20 +143,35 @@ func runRefresh(days int) {
 	defer profileMu.Unlock()
 
 	logger.Printf("[刷新] 开始后台抓取…")
-	snap, err := collectSnapshot(days, false, false)
+	// 后台刷新（含开机首轮与定时巡检）不弹登录窗:会话失效就只标记状态，
+	// 由设置页的单源登录按钮决定要不要登录，避免窗口自己跳出来。
+	snap, err := collectSnapshotBackground(days)
 	if err != nil {
 		logger.Printf("[刷新] 抓取失败:%v", err)
-		setLoginRequired(errors.Is(err, errNotLoggedIn) || strings.Contains(err.Error(), "登录"))
+		needLogin := errors.Is(err, errNotLoggedIn) || strings.Contains(err.Error(), "登录")
+		setLoginRequired(needLogin)
+		if needLogin {
+			recordSource(sourceEclass, false, "会话已失效,需要重新登录")
+		}
 		return
 	}
 	setLoginRequired(false)
+	writeReportsFromSnapshot(snap, days)
+	logger.Printf("[刷新] 完成:%d 门课 %d 条任务", len(snap.Courses), len(snap.Items))
+}
+
+// refreshDays 速查页/登录后的报告口径:与 /api/refresh 一致
+const refreshDays = 3
+
+// writeReportsFromSnapshot 把一次抓取结果写成 Markdown/CSV 报告。
+// 后台刷新与「登录后立刻抓一次」共用。
+func writeReportsFromSnapshot(snap *Snapshot, days int) {
 	submitted := snap.SubmittedExams
 	if submitted == nil {
 		submitted = map[string][]interface{}{}
 	}
 	rep := buildReport(snap.Courses, snap.Items, submitted, days, loadIgnored())
 	writeReports(rep, days)
-	logger.Printf("[刷新] 完成:%d 门课 %d 条任务", len(snap.Courses), len(snap.Items))
 }
 
 func sendJSON(w http.ResponseWriter, code int, v interface{}) {
@@ -286,12 +301,32 @@ func newMux(port int) http.Handler {
 		logger.Printf("[检查] 开始探测三路会话…")
 		sendJSON(w, 200, loginStatusSnapshot())
 	})
+	// 单源登录:只给查出未登录的那一路开可见窗口(异步,页面轮询 /api/login-state)
+	mux.HandleFunc("/api/source-login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			sendText(w, 404, "not found")
+			return
+		}
+		var body struct {
+			Source string `json:"source"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			sendJSON(w, 400, map[string]string{"error": "请求格式错误"})
+			return
+		}
+		if started, why := startSourceLogin(body.Source); !started {
+			sendJSON(w, 409, map[string]string{"error": why})
+			return
+		}
+		logger.Printf("[登录] 开始单源登录:%s", sourceName(body.Source))
+		sendJSON(w, 200, loginStatusSnapshot())
+	})
 	mux.HandleFunc("/api/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			sendText(w, 404, "not found")
 			return
 		}
-		go runRefresh(3)
+		go runRefresh(refreshDays)
 		sendJSON(w, 200, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("/api/ignore", func(w http.ResponseWriter, r *http.Request) {

@@ -160,7 +160,7 @@ func TestLoginStateAPI(t *testing.T) {
 		t.Fatalf("初始 checking 应为 false,实际 %v", got["checking"])
 	}
 
-	// 检查登录会真的起浏览器,这里只验证方法守卫
+	// 检查登录/单源登录都会真的起浏览器,这里只验证方法守卫与参数校验
 	resp2, err := http.Get(srv.URL + "/api/check-login")
 	if err != nil {
 		t.Fatalf("GET /api/check-login 失败:%v", err)
@@ -168,6 +168,26 @@ func TestLoginStateAPI(t *testing.T) {
 	resp2.Body.Close()
 	if resp2.StatusCode != 404 {
 		t.Fatalf("GET /api/check-login 应返回 404(只支持 POST),实际 %d", resp2.StatusCode)
+	}
+
+	resp3, err := http.Post(srv.URL+"/api/source-login", "application/json",
+		strings.NewReader(`{"source":"bogus"}`))
+	if err != nil {
+		t.Fatalf("POST /api/source-login 失败:%v", err)
+	}
+	resp3.Body.Close()
+	if resp3.StatusCode != 409 {
+		t.Fatalf("未知数据源应被拒绝(409),实际 %d", resp3.StatusCode)
+	}
+
+	resp4, err := http.Post(srv.URL+"/api/source-login", "application/json",
+		strings.NewReader(`not json`))
+	if err != nil {
+		t.Fatalf("POST /api/source-login(坏 JSON)失败:%v", err)
+	}
+	resp4.Body.Close()
+	if resp4.StatusCode != 400 {
+		t.Fatalf("坏 JSON 应返回 400,实际 %d", resp4.StatusCode)
 	}
 }
 

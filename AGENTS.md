@@ -100,7 +100,11 @@ gh release upload v0.4.1 dist\yanhektddl-setup-0.4.1.exe -R Dayu-L/yanhektddl-mo
 - 新增 Windows 能力优先写进 `platform_windows.go`(纯 syscall);**禁止引入需要 CGO 的依赖**(本机无 gcc,且会破坏单文件分发)
 - 抓取逻辑改动的验收标准:`--fetch` 全链路真实跑通,不是"编译通过"
 - 新增数据源一律「尽力而为」:未登录/接口异常只能记日志跳过(参考 `browser.go` 阶段 4 + `logZhsSkip`),不得让延河/乐学的核心流程失败
-- 新增数据源时同步 `loginstate.go`:`recordSource` 记一份最近结论,设置页的登录状态与
+- 后台流程(刷新 / 定时巡检 / 保温 ping)**不得**自己弹登录窗口:会话失效只记状态并把
+`login_required` 置真,登录一律由用户主动触发(设置页单源登录 / 登录向导 / `--fetch`)。
+`collectSnapshotMode` 的 `autoLogin` 参数就是这条边界。
+
+新增数据源时同步 `loginstate.go`:`recordSource` 记一份最近结论,设置页的登录状态与
 「检查登录状态」才会覆盖到它(键名在 `sourceXxx` 常量里加)。
 
 新增数据源必须在采集出口经过 `normalize.go` 的 `normalizeItem`/`normalizeCourse`

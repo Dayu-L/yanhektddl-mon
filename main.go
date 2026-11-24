@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -148,8 +149,13 @@ func main() {
 
 // fetchOnce 完整抓取一次并生成报告与通知;返回是否有临期/漏交事项
 func fetchOnce(days int, visible, withNotify, forceDeep bool) bool {
-	snap, err := collectSnapshot(days, visible, forceDeep)
+	// 计划任务(--notify)无人值守:会话失效不弹登录窗,改为发通知请用户去设置页处理
+	snap, err := collectSnapshot(days, visible, forceDeep, !withNotify)
 	if err != nil {
+		if withNotify && (errors.Is(err, errNotLoggedIn) || strings.Contains(err.Error(), "登录")) {
+			recordSource(sourceEclass, false, "会话已失效,需要重新登录(定时巡检未自动弹窗)")
+			notify("延河课堂 DDL 需要重新登录", "自动巡检发现登录已失效。打开程序 → 设置 → 登录状态,点「登录」补上即可。")
+		}
 		fmt.Printf("[!] 抓取失败:%v\n", err)
 		return false
 	}

@@ -61,7 +61,10 @@
       margin-block-start: 1px; color: var(--faint); font-size: 12px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    & .s-state { font-size: 12px; color: var(--muted); }
+    & .s-side { display: flex; align-items: center; gap: 8px; }
+    & .s-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    /* 行内登录按钮:比常规 ghost 按钮小一号,不把行高抬起来 */
+    & .s-login { height: 26px; padding-inline: 10px; }
     &.ok {
       & .dot { background: var(--positive); }
       & .s-state { color: var(--positive); }
@@ -69,6 +72,10 @@
     &.bad {
       & .dot { background: var(--negative); }
       & .s-state { color: var(--negative); }
+    }
+    &.pending {
+      & .dot { background: var(--data-hue); }
+      & .s-state { color: var(--data-hue); }
     }
   }
 
@@ -141,7 +148,7 @@
     <div class="row srow">
       <div class="grow">
         <div class="label">登录状态</div>
-        <div class="hint">最近一次刷新或巡检得到的结论;久未打开、换网络后可能已失效。</div>
+        <div class="hint">指程序自己保存的会话,与日常 Edge 无关;查出未登录时该行会给出「登录」按钮。</div>
       </div>
       <div class="actions">
         <button class="btn btn-ghost" id="checkLogin" type="button">检查登录状态</button>
@@ -214,7 +221,7 @@ const SOURCES = [
   { key: 'aita', name: '延河课堂', tag: '可选', desc: '课程关闭时间' },
   { key: 'zhs', name: '智慧树', tag: '可选', desc: '共享课 · 智慧课程' },
 ];
-const CHECK_MAX_MS = 3 * 60 * 1000; // 浏览器起停 + 三次探测的上限
+const LOGIN_MAX_MS = 12 * 60 * 1000; // 单源登录窗口最长等 10 分钟,再留点余量
 
 const checkBtn = document.getElementById('checkLogin');
 const sourcesEl = document.getElementById('sources');
@@ -243,19 +250,22 @@ function setChecking(on) {
   checkBtn.innerHTML = on
     ? '<span class="spinner"></span>检查中…'
     : '检查登录状态';
-  if (on) checkMsgEl.textContent = '正在起无窗口浏览器逐个探测,约 20 秒…';
 }
 
-// 检查结果提示只活 3 分钟:避免隔天打开页面还挂着“正在抓取数据…”
+// 提示只活 3 分钟(登录/检查进行中除外):避免隔天打开页面还挂着旧话
 function freshMessage(st) {
-  if (!st.check_message) return '';
-  const t = Date.parse(st.check_message_at || '');
-  return t && Date.now() - t < 3 * 60000 ? st.check_message : '';
+  if (!st.message) return '';
+  const t = Date.parse(st.message_at || '');
+  const age = t ? Date.now() - t : Infinity;
+  return st.source_login || st.checking || age < 3 * 60000 ? st.message : '';
 }
 
 function renderLoginState(st) {
   if (!st) return;
   const srcs = st.sources || {};
+  const busyKey = st.source_login ? (st.source_login_key || '') : '';
+  const frozen = !!st.checking || !!st.source_login;
+
   sourcesEl.innerHTML = SOURCES.map(s => {
     const v = srcs[s.key];
     let cls = 'unknown';
@@ -266,17 +276,34 @@ function renderLoginState(st) {
       state = v.ok ? '已登录' : '未登录';
       why = (v.why || s.desc) + (v.checked_at ? ' · ' + relTime(v.checked_at) + '检查' : '');
     }
+    if (busyKey === s.key) { cls = 'pending'; state = '等待登录…'; }
+
+    // 查出未登录(或正在等这一路登录)时,就地给一个「登录」按钮:
+    // 只开这一个平台的登录窗口,不走完整登录向导
+    let loginBtn = '';
+    if (busyKey === s.key) {
+      loginBtn = '<button class="btn btn-ghost s-login" type="button" disabled>'
+        + '<span class="spinner"></span>登录中</button>';
+    } else if (v && !v.ok) {
+      loginBtn = '<button class="btn btn-ghost s-login" type="button" data-src="' + s.key + '"'
+        + (frozen ? ' disabled' : '') + '>登录</button>';
+    }
+
     return '<li class="source ' + cls + '">'
       + '<span class="dot" aria-hidden="true"></span>'
       + '<div class="s-main">'
       + '<div class="s-name">' + s.name + '<span class="s-tag">' + s.tag + '</span></div>'
       + '<div class="s-why">' + esc(why) + '</div>'
       + '</div>'
-      + '<span class="s-state">' + esc(state) + '</span>'
+      + '<div class="s-side"><span class="s-state">' + esc(state) + '</span>' + loginBtn + '</div>'
       + '</li>';
   }).join('');
+
+  checkBtn.disabled = frozen;
+  checkBtn.innerHTML = st.checking
+    ? '<span class="spinner"></span>检查中…'
+    : '检查登录状态';
   checkMsgEl.textContent = freshMessage(st);
-  if (st.checking) setChecking(true);
 }
 
 async function fetchLoginState() {
@@ -287,15 +314,20 @@ async function loadLoginState() {
   try {
     const st = await fetchLoginState();
     renderLoginState(st);
-    if (st.checking) startPoll();
+    if (st.checking || st.source_login) startPoll();
   } catch (e) {
     checkMsgEl.textContent = '读取登录状态失败,请关闭窗口后重新打开程序';
   }
 }
 
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// 检查(约 20 秒)与单源登录(可见窗口最长等 10 分钟)共用一条轮询
 function startPoll() {
-  pollDeadline = Date.now() + CHECK_MAX_MS;
   if (pollTimer) return;
+  pollDeadline = Date.now() + LOGIN_MAX_MS;
   pollTimer = setInterval(async () => {
     let st;
     try {
@@ -303,22 +335,22 @@ function startPoll() {
     } catch (e) {
       return; // 偶发失败下一轮再试
     }
-    if (Date.now() > pollDeadline) {
-      clearInterval(pollTimer); pollTimer = null;
-      setChecking(false);
-      checkMsgEl.textContent = '检查超时,可能是浏览器或网络异常,请稍后重试';
+    renderLoginState(st);
+    if (!st.checking && !st.source_login) {
+      stopPoll();
       return;
     }
-    renderLoginState(st);
-    if (!st.checking) {
-      clearInterval(pollTimer); pollTimer = null;
-      setChecking(false);
+    if (Date.now() > pollDeadline) {
+      stopPoll();
+      checkMsgEl.textContent = '等待超时:可以关掉弹出的 Edge 窗口后重试';
+      loadLoginState();
     }
   }, 1200);
 }
 
 checkBtn.addEventListener('click', async () => {
   setChecking(true);
+  checkMsgEl.textContent = '正在起无窗口浏览器逐个探测,约 20 秒…';
   try {
     const res = await fetch('/api/check-login', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
@@ -332,6 +364,35 @@ checkBtn.addEventListener('click', async () => {
   } catch (e) {
     setChecking(false);
     checkMsgEl.textContent = '无法连接本地服务,请关闭窗口后重新打开程序';
+  }
+});
+
+// 单源登录:只给这一路开可见窗口等用户登录(事件委托,列表是动态渲染的)
+sourcesEl.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-src]');
+  if (!btn || btn.disabled) return;
+  const key = btn.dataset.src;
+  const name = (SOURCES.find(s => s.key === key) || {}).name || key;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>启动中';
+  checkMsgEl.textContent = '正在打开「' + name + '」登录窗口…';
+  try {
+    const res = await fetch('/api/source-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: key }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      checkMsgEl.textContent = data.error || '登录启动失败,请稍后重试';
+      loadLoginState();
+      return;
+    }
+    renderLoginState(data);
+    startPoll();
+  } catch (err) {
+    checkMsgEl.textContent = '无法连接本地服务,请关闭窗口后重新打开程序';
+    loadLoginState();
   }
 });
 

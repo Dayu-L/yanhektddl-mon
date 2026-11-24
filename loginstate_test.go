@@ -13,7 +13,8 @@ func TestLoginStateRoundTrip(t *testing.T) {
 	reset := func() {
 		loginStatusMu.Lock()
 		loginStatusData = nil
-		loginCheckMsg = ""
+		loginMsg, loginMsgAt = "", ""
+		loginSourceKey = ""
 		loginStatusMu.Unlock()
 	}
 	reset()

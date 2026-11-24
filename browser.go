@@ -522,9 +522,18 @@ func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
 
 // ---------------------------------------------------------------- 主流程
 
-// collectSnapshot 完整抓取一次并保存 ddl_data.json;需要时自动弹 Edge 登录窗。
-func collectSnapshot(days int, visible, forceDeep bool) (*Snapshot, error) {
-	return collectSnapshotMode(visible, false, forceDeep)
+// collectSnapshot 完整抓取一次并保存 ddl_data.json。
+// autoLogin=false 用在无人值守的场景(计划任务 --notify):会话失效时只返回错误,
+// 不弹登录窗——否则早上 9:00 会自己蹦出一个 Edge 窗口跳到统一身份认证页。
+func collectSnapshot(days int, visible, forceDeep, autoLogin bool) (*Snapshot, error) {
+	return collectSnapshotMode(visible, false, forceDeep, autoLogin)
+}
+
+// collectSnapshotBackground 后台刷新专用:会话失效时只返回 errNotLoggedIn,
+// 不换成可见窗口等登录 —— 该不该登录交给设置页的单源登录决定,
+// 否则用户点一下刷新就会有个 Edge 窗口自己跳到统一身份认证页。
+func collectSnapshotBackground(days int) (*Snapshot, error) {
+	return collectSnapshotMode(false, false, false, false)
 }
 
 // collectSnapshotForLogin 登录向导专用:直接以可见窗口进入“等用户登录”流程。
@@ -534,7 +543,7 @@ func collectSnapshot(days int, visible, forceDeep bool) (*Snapshot, error) {
 // "chrome failed to start"(stderr 为空)。慢机器/杀软实时扫描时这个
 // 竞态窗口会放大,于是“开发机正常、别人电脑秒失败”。
 func collectSnapshotForLogin() (*Snapshot, error) {
-	return collectSnapshotMode(true, true, true)
+	return collectSnapshotMode(true, true, true, true)
 }
 
 // needDeepScan 今天还没有深度扫描过 -> 需要一次。
@@ -551,7 +560,7 @@ func needDeepScan() bool {
 	return t.In(TZ).Format("2006-01-02") != time.Now().In(TZ).Format("2006-01-02")
 }
 
-func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error) {
+func collectSnapshotMode(visible, forceLogin, forceDeep, autoLogin bool) (*Snapshot, error) {
 	s, err := openBrowser(visible)
 	if err != nil {
 		return nil, err
@@ -585,7 +594,10 @@ func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error)
 	}
 
 	res, err := tryCollect(s, deep)
-	if err == errNotLoggedIn { // 需要人工登录:能开可见窗口就换一个
+	if err == errNotLoggedIn { // 需要人工登录:后台刷新不弹窗,只上报
+		if !autoLogin {
+			return nil, errNotLoggedIn
+		}
 		if !visible {
 			s.close()
 			s = nil
