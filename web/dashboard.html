@@ -286,9 +286,11 @@ const icon = (name, size) =>
 /* ---------- 渲染 ---------- */
 let DATA = null;
 // 两个正交的筛选维度,互不干扰:数据源(乐学/智慧树) × 任务类型(作业/考试·测验/话题讨论/问卷)
+// 数据源单选;类型多选(空数组 = 全部),比如「作业 + 问卷」可以叠加看。
 let FILTER_PLAT = "all";
-let FILTER_KIND = "all";
-const filterActive = () => FILTER_PLAT !== "all" || FILTER_KIND !== "all";
+let FILTER_KINDS = [];
+const kindOn = k => FILTER_KINDS.indexOf(k) >= 0;
+const filterActive = () => FILTER_PLAT !== "all" || FILTER_KINDS.length > 0;
 const PLAT_CLASS = { "智慧树": "plat zhs" };
 
 // 数据源小标签:一眼看出这条任务来自乐学还是智慧树
@@ -351,7 +353,7 @@ function sectionHTML(id, title, rows, opts) {
 
 function render() {
   renderFilters(DATA);
-  const d = filterData(DATA, FILTER_PLAT, FILTER_KIND);
+  const d = filterData(DATA, FILTER_PLAT, FILTER_KINDS);
   const main = $("#main"), rail = $("#rail");
   const heroCand = (d.urgent || []).concat(d.week || [], d.later || [], d.unknown || []);
   const hero = heroCand.length ? heroCand.reduce((a, b) => (parseEnd(a.end) <= parseEnd(b.end) ? a : b)) : null;
@@ -413,8 +415,10 @@ const ROW_GROUPS = ["missed", "urgent", "week", "later", "unknown", "done", "ign
 const KIND_ORDER = ["作业", "考试/测验", "话题讨论", "问卷"];
 
 const rowsOf = d => ROW_GROUPS.reduce((acc, k) => acc.concat(d[k] || []), []);
-const matchRow = (r, plat, kind) =>
-  (plat === "all" || r.platform === plat) && (kind === "all" || r.kind === kind);
+// kinds 是数组:空表示不限类型;countRows 给它单元素数组就是“只看这个类型”
+const matchRow = (r, plat, kinds) =>
+  (plat === "all" || r.platform === plat) &&
+  (kinds.length === 0 || kinds.indexOf(r.kind) >= 0);
 
 function platformsOf(d) {
   const seen = [];
@@ -432,18 +436,20 @@ function kindsOf(d) {
 // 计数口径:每组的数字反映「另一个维度当前选择」下的条数 —— 点类型时能看到
 // 各类型在当前来源下的量,点来源时能看到各来源在当前类型下的量,不会出现
 // “选了智慧树、乐学的数字却还是全局值”这种自相矛盾。
-function countRows(d, plat, kind) {
-  return rowsOf(d).filter(r => matchRow(r, plat, kind)).length;
+// 类型是多选,所以每个类型胶囊的数字只按「当前来源 + 这一个类型」算:
+// 否则叠加筛选后会有一整排 0,看不出哪项其实还有内容。
+function countRows(d, plat, kinds) {
+  return rowsOf(d).filter(r => matchRow(r, plat, kinds)).length;
 }
 
-function filterData(d, plat, kind) {
-  if (plat === "all" && kind === "all") return d;
+function filterData(d, plat, kinds) {
+  if (plat === "all" && kinds.length === 0) return d;
   const out = { fetched_at: d.fetched_at };
-  for (const k of ROW_GROUPS) out[k] = (d[k] || []).filter(r => matchRow(r, plat, kind));
+  for (const k of ROW_GROUPS) out[k] = (d[k] || []).filter(r => matchRow(r, plat, kinds));
   const courses = {};
   for (const k of ROW_GROUPS) for (const r of out[k]) courses[r.course] = 1;
   out.course_count = Object.keys(courses).length;
-  out.item_count = countRows(d, plat, kind);
+  out.item_count = countRows(d, plat, kinds);
   return out;
 }
 
@@ -454,26 +460,30 @@ function renderFilters(d) {
   if (!box) return;
   const plats = platformsOf(d), kinds = kindsOf(d);
   if (FILTER_PLAT !== "all" && plats.indexOf(FILTER_PLAT) < 0) FILTER_PLAT = "all";
-  if (FILTER_KIND !== "all" && kinds.indexOf(FILTER_KIND) < 0) FILTER_KIND = "all";
+  // 数据刷新后消失的类型从多选集合里剔掉,免得带着一个永远筛不出东西的条件
+  FILTER_KINDS = FILTER_KINDS.filter(k => kinds.indexOf(k) >= 0);
 
-  const chip = (attr, val, label, on, n) =>
+  const chip = (attr, val, label, on, n, title) =>
     '<button class="chip' + (n === 0 && !on ? " chip-zero" : "") + '" type="button" ' + attr +
-    '="' + esc(val) + '" aria-pressed="' + on + '">'
+    '="' + esc(val) + '" aria-pressed="' + on + '"' + (title ? ' title="' + esc(title) + '"' : "") + '>'
     + esc(label) + '<span class="n">' + n + "</span></button>";
 
   const groups = [];
   if (plats.length > 1) {
     let g = '<div class="chipgroup" role="group" aria-label="按数据源筛选"><span class="chiplabel">来源</span>'
-      + chip("data-plat", "all", "全部", FILTER_PLAT === "all", countRows(d, "all", FILTER_KIND));
+      + chip("data-plat", "all", "全部", FILTER_PLAT === "all", countRows(d, "all", FILTER_KINDS), "不限来源");
     for (const p of plats)
-      g += chip("data-plat", p, p, FILTER_PLAT === p, countRows(d, p, FILTER_KIND));
+      g += chip("data-plat", p, p, FILTER_PLAT === p, countRows(d, p, FILTER_KINDS), "只看 " + p + "(单选)");
     groups.push(g + "</div>");
   }
   if (kinds.length > 1) {
-    let g = '<div class="chipgroup" role="group" aria-label="按任务类型筛选"><span class="chiplabel">类型</span>'
-      + chip("data-kind", "all", "全部", FILTER_KIND === "all", countRows(d, FILTER_PLAT, "all"));
+    let g = '<div class="chipgroup" role="group" aria-label="按任务类型筛选(可多选)">'
+      + '<span class="chiplabel">类型</span>'
+      + chip("data-kind", "all", "全部", FILTER_KINDS.length === 0,
+        countRows(d, FILTER_PLAT, []), "不限类型");
     for (const k of kinds)
-      g += chip("data-kind", k, k, FILTER_KIND === k, countRows(d, FILTER_PLAT, k));
+      g += chip("data-kind", k, k, kindOn(k), countRows(d, FILTER_PLAT, [k]),
+        "可多选:再点一次取消");
     groups.push(g + "</div>");
   }
   if (!groups.length) { box.hidden = true; box.innerHTML = ""; return; }
@@ -486,7 +496,7 @@ function renderFilters(d) {
 
 // 筛选后一条不剩时的空态:说清当前条件,并给一条退路
 function filterEmptyHTML() {
-  const cond = [FILTER_PLAT === "all" ? "" : FILTER_PLAT, FILTER_KIND === "all" ? "" : FILTER_KIND]
+  const cond = [FILTER_PLAT === "all" ? "" : FILTER_PLAT, FILTER_KINDS.join(" / ")]
     .filter(Boolean).join(" · ");
   return '<section class="card hero"><div class="hero-top"><div>'
     + '<div class="hero-headline">当前筛选下没有任务</div>'
@@ -549,18 +559,22 @@ function toggleDetail(btn) {
 document.addEventListener("click", e => {
   const chip = e.target.closest(".chip[data-plat], .chip[data-kind]");
   if (chip) {
-    // 再点一次已选中的胶囊 = 取消该项筛选(回到全部)
     if (chip.dataset.plat !== undefined) {
+      // 数据源单选:再点一次已选中的胶囊 = 取消(回到全部)
       FILTER_PLAT = chip.dataset.plat === FILTER_PLAT ? "all" : chip.dataset.plat;
     } else {
-      FILTER_KIND = chip.dataset.kind === FILTER_KIND ? "all" : chip.dataset.kind;
+      // 类型多选:「全部」清空;点某个类型即加入/移出已选集合
+      const k = chip.dataset.kind;
+      if (k === "all") FILTER_KINDS = [];
+      else if (kindOn(k)) FILTER_KINDS = FILTER_KINDS.filter(x => x !== k);
+      else FILTER_KINDS = FILTER_KINDS.concat(k);
     }
     render();
     return;
   }
   if (e.target.closest("[data-clear-filters]")) {
     FILTER_PLAT = "all";
-    FILTER_KIND = "all";
+    FILTER_KINDS = [];
     render();
     return;
   }
