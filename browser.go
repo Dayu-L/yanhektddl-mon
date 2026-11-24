@@ -665,17 +665,30 @@ func collectSnapshotMode(visible, forceLogin, forceDeep, autoLogin bool) (*Snaps
 // 深度扫描时刷新 deepAt;快路径保留上次 deepAt(每日首轮判断依据)。
 func saveCollected(res *collectResult, deep bool) (*Snapshot, error) {
 	var deepAt string
-	if snap, err := loadSnapshot(); err == nil {
-		deepAt = snap.DeepAt
+	prev, _ := loadSnapshot() // 可能不存在(首次运行),下面按 nil 处理
+	if prev != nil {
+		deepAt = prev.DeepAt
 	}
 	if deep {
 		deepAt = time.Now().In(TZ).Format(time.RFC3339)
 	}
 	// 出口归一:快照文件本身只保留一种格式(时间北京时间、id 字符串、
 	// kind 规范值、status 显式),这样 --from-json 与外部脚本都不用再兼容。
-	items := make([]Item, len(res.Items))
-	for i, it := range res.Items {
-		items[i] = normalizeItem(it, res.Submitted)
+	items := make([]Item, 0, len(res.Items))
+	seen := make(map[string]bool, len(res.Items))
+	for _, it := range res.Items {
+		n := normalizeItem(it, res.Submitted)
+		items = append(items, n)
+		seen[itemKey(n)] = true
+	}
+	// 快路径(/api/todos)只会带回「还没做」的项:已完成、已过期、问卷这些
+	// 只有深度扫描才拿得到。这里用上一轮快照把它们补回来,否则点一次
+	// 「刷新数据」,速查页的已完成/已过期列表就整片消失。
+	if !deep && prev != nil {
+		if carried := carryOverItems(prev.Items, seen); len(carried) > 0 {
+			items = append(items, carried...)
+			logger.Printf("[快照] 保留上一轮 %d 条任务(快路径只覆盖近期待办)", len(carried))
+		}
 	}
 	courses := make([]Course, len(res.Courses))
 	for i, c := range res.Courses {
@@ -705,6 +718,25 @@ func saveCollected(res *collectResult, deep bool) (*Snapshot, error) {
 		recordSource(sourceZhs, true, "")
 	}
 	return snap, nil
+}
+
+// itemKey 任务的稳定标识,与速查页「忽略」用的 key 同源(zy#id)。
+func itemKey(it Item) string { return it.Zy + "#" + idString(it.ID) }
+
+// carryOverItems 保留上一轮快照里本轮没返回的项。
+// 快路径(/api/todos)只覆盖近期待办:已完成、已过期、问卷以及远期任务都只有
+// 深度扫描才拿得到(实测 61 条 vs 9 条)。所以缺项一律沿用上一轮结论,等下一次
+// 深度扫描(每天首轮)再校准 —— 否则点一次「刷新数据」,远期任务和已完成列表
+// 会整片消失。
+func carryOverItems(prev []Item, seen map[string]bool) []Item {
+	var out []Item
+	for _, it := range prev {
+		if seen[itemKey(it)] {
+			continue // 本轮有更新结论,以本轮为准
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // ---------------------------------------------------------------- 快照读写
