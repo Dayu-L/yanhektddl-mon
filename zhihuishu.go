@@ -37,6 +37,8 @@ const (
 	zhsAICourseOrigin = "https://ai-smart-course-student-pro.zhihuishu.com"
 	// 课程列表接口(返回 courseId / classId / linkUrl 等)
 	zhsAICourseAPI = "https://onlineservice-api.zhihuishu.com/gateway/t/v1/student/queryStudentAICourseList"
+	// 登录态探测接口:免签(/gateway/f/),返回 result.uuid / realName,未登录时没有 result
+	zhsLoginUserAPI = "https://onlineservice-api.zhihuishu.com/gateway/f/v1/login/getLoginUserInfo"
 	// 任务列表接口:taskType 1=作业测试 2=考试 3=话题讨论
 	//              status  0=未完成/进行中 1=已完成/已结束
 	zhsAITaskAPI = "https://kg-run-student.zhihuishu.com/student/gateway/t/task/taskList"
@@ -252,36 +254,62 @@ func zhsSecret() (string, error) {
 	return aesSecret("{}", zhsSiteAESKey, zhsSiteAESIv)
 }
 
-// zhsProbeExpr 拼一个零参的探测表达式给 pollProbe 轮询:
-// 直接复用真实拨取路径(jsZhsAICourses),登录成功就能拿到列表。
-func zhsProbeExpr(secret string) string {
-	return "() => (" + jsZhsAICourses + ")(" + strconv.Quote(secret) + ")"
+// zhsLoginProbe 在智慧树自家域的页面里问一次「有没有用户信息」。
+// 返回 (已登录, 原因);原因只用于日志与设置页展示。
+func zhsLoginProbe(s *browserSession) (bool, string) {
+	var why string
+	for attempt := 0; attempt < 3; attempt++ {
+		out, err := s.eval("(" + jsZhsLoginReady + ")()")
+		if err == nil {
+			var res struct {
+				OK  bool   `json:"ok"`
+				Why string `json:"why"`
+			}
+			if json.Unmarshal([]byte(out), &res) == nil {
+				if res.OK {
+					return true, ""
+				}
+				why = res.Why
+				// 登录页 / 没有用户信息:已是明确结论,不必等 JS 上下文
+				if res.Why != "" && res.Why != "not-json" {
+					return false, res.Why
+				}
+			}
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	if why == "" {
+		why = "no-result"
+	}
+	return false, why
 }
 
-// zhsProbe 探测智慧树登录态:导航到学生首页 + 试调一次课程列表。
+// zhsLooksLoggedOut 判断一次探测失败是不是「确实没登录」。
+// 注意不能按「课程列表为空」判:未登录时列表接口也可能回 200 + 空数组。
+func zhsLooksLoggedOut(why string) bool {
+	return why == "no-user" || why == "no-result" || zhsAuthFailure(why)
+}
+
+// zhsProbe 探测智慧树登录态:导航到学生首页 + 查一次用户信息(getLoginUserInfo)。
 // 返回 (已登录, 错误);errZhsNotLoggedIn 归为「确实没登录」,
 // 其余错误当异常(网络/接口改动),不要误导用户去登录。
-func zhsProbe(s *browserSession, secret string) (bool, error) {
+func zhsProbe(s *browserSession) (bool, error) {
 	if err := s.navigate(zhsHomeURL, 0); err != nil {
 		return false, err
 	}
-	if _, err := evalZhsAICourses(s, secret); err != nil {
-		if errors.Is(err, errZhsNotLoggedIn) {
-			return false, nil
-		}
-		return false, err
+	ok, why := zhsLoginProbe(s)
+	if ok {
+		return true, nil
 	}
-	return true, nil
+	if zhsLooksLoggedOut(why) {
+		return false, nil
+	}
+	return false, fmt.Errorf("智慧树登录探测:%s", why)
 }
 
-// probeZhs 给设置页「检查登录状态」用的轻量探测:返回 (已登录, 未登录/异常的原因)。
-// 与 zhsProbe 的区别只在把原因整理成给人看的句子。
+// probeZhs 给设置页「检查登录状态」用的轻量探测:把原因整理成给人看的句子。
 func probeZhs(s *browserSession) (bool, string) {
-	secret, err := zhsSecret()
-	if err != nil {
-		return false, "签名参数计算失败:" + err.Error()
-	}
-	ok, err := zhsProbe(s, secret)
+	ok, err := zhsProbe(s)
 	if ok {
 		return true, ""
 	}

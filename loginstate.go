@@ -179,13 +179,20 @@ func startSourceLogin(key string) (bool, string) {
 	loginStatusMu.Unlock()
 
 	go func() {
-		defer func() {
-			loginStatusMu.Lock()
-			loginSourceKey = ""
-			loginStatusMu.Unlock()
-			loginSourceBusy.Store(false)
+		needRefresh := false
+		func() {
+			defer func() {
+				loginStatusMu.Lock()
+				loginSourceKey = ""
+				loginStatusMu.Unlock()
+				loginSourceBusy.Store(false)
+			}()
+			needRefresh = runSourceLogin(key)
 		}()
-		runSourceLogin(key)
+		if needRefresh {
+			// 浏览器已关、锁已放:用正常的后台刷新把新数据取回来
+			runRefresh(refreshDays)
+		}
 	}()
 	return true, ""
 }
@@ -238,11 +245,11 @@ func checkLoginSources() string {
 }
 
 // runSourceLogin 单源登录:开可见窗口 -> 等用户登录 -> 记结论。
-// 乐学是必需数据源,登录成功后顺手抓一次,速查页立刻有数据。
-func runSourceLogin(key string) {
+// 返回是否需要接着跑一次后台刷新(乐学在函数内就抓完了,可选源交给刷新)。
+func runSourceLogin(key string) (needRefresh bool) {
 	if !profileMu.TryLock() {
 		setLoginMessage("正在抓取数据,等它结束再点登录")
-		return
+		return false
 	}
 	defer profileMu.Unlock()
 
@@ -251,7 +258,7 @@ func runSourceLogin(key string) {
 	if err != nil {
 		recordSource(key, false, "浏览器启动失败:"+err.Error())
 		setLoginMessage("浏览器启动失败:" + err.Error())
-		return
+		return false
 	}
 	defer s.close()
 
@@ -262,46 +269,66 @@ func runSourceLogin(key string) {
 	case sourceAita:
 		ok = waitLoginAita(s, aitaLoginTO)
 	case sourceZhs:
-		secret, serr := zhsSecret()
-		if serr != nil {
-			recordSource(sourceZhs, false, "签名参数计算失败")
-			setLoginMessage("智慧树登录失败:" + serr.Error())
-			return
-		}
-		ok = waitLoginZhihuishu(s, secret, zhsLoginTO)
+		ok = waitLoginZhihuishu(s, zhsLoginTO)
 	}
 
 	if !ok {
 		recordSource(key, false, "等待登录超时,可以再点一次登录")
 		setLoginMessage("没有等到「" + sourceName(key) + "」登录完成,已放弃本次登录")
-		return
+		return false
 	}
 	recordSource(key, true, "")
 	logger.Printf("[登录] %s 登录成功(单源)", sourceName(key))
-	setLoginMessage("「" + sourceName(key) + "」登录成功")
 
-	if key != sourceEclass {
-		setLoginMessage("「" + sourceName(key) + "」登录成功,点「刷新数据」即可更新任务")
-		return
+	if key == sourceEclass {
+		// 乐学是必需数据源:登录后立刻抓一次(与刷新同一条路径)
+		setLoginRequired(false)
+		deep := needDeepScan()
+		res, cerr := tryCollect(s, deep)
+		if cerr != nil {
+			logger.Printf("[登录] 登录成功但抓取失败:%v", cerr)
+			setLoginMessage("乐学登录成功,但抓取失败:" + cerr.Error())
+			return false
+		}
+		snap, serr := saveCollected(res, deep)
+		if serr != nil {
+			logger.Printf("[登录] 保存快照失败:%v", serr)
+			setLoginMessage("乐学登录成功,但保存数据失败:" + serr.Error())
+			return false
+		}
+		writeReportsFromSnapshot(snap, refreshDays)
+		syncAutoCheck()
+		setLoginMessage("乐学登录成功,已抓取 " + strconv.Itoa(len(snap.Courses)) + " 门课、" +
+			strconv.Itoa(len(snap.Items)) + " 条任务")
+		return false
 	}
 
-	// 乐学是必需数据源:登录后立刻抓一次(与刷新同一条路径)
-	setLoginRequired(false)
-	deep := needDeepScan()
-	res, cerr := tryCollect(s, deep)
-	if cerr != nil {
-		logger.Printf("[登录] 登录成功但抓取失败:%v", cerr)
-		setLoginMessage("乐学登录成功,但抓取失败:" + cerr.Error())
-		return
+	if key == sourceZhs {
+		// 立刻数一次智慧课程,给用户一个准信(免得"登录成功但什么都没有")
+		if n, cerr := zhsCourseCount(s); cerr == nil {
+			setLoginMessage("「智慧树」登录成功,检测到 " + strconv.Itoa(n) + " 门智慧课程,正在刷新数据…")
+		} else {
+			logger.Printf("[登录] 智慧树课程列表读取失败:%v", cerr)
+			setLoginMessage("「智慧树」登录成功,正在刷新数据…")
+		}
+	} else {
+		setLoginMessage("「" + sourceName(key) + "」登录成功,正在刷新数据…")
 	}
-	snap, serr := saveCollected(res, deep)
-	if serr != nil {
-		logger.Printf("[登录] 保存快照失败:%v", serr)
-		setLoginMessage("乐学登录成功,但保存数据失败:" + serr.Error())
-		return
+	return true
+}
+
+// zhsCourseCount 登录成功后数一次智慧课程,仅用于给设置页一句准信。
+func zhsCourseCount(s *browserSession) (int, error) {
+	if err := s.navigate(zhsAICourseOrigin+"/", 0); err != nil {
+		return 0, err
 	}
-	writeReportsFromSnapshot(snap, refreshDays)
-	syncAutoCheck()
-	setLoginMessage("乐学登录成功,已抓取 " + strconv.Itoa(len(snap.Courses)) + " 门课、" +
-		strconv.Itoa(len(snap.Items)) + " 条任务")
+	secret, err := zhsSecret()
+	if err != nil {
+		return 0, err
+	}
+	courses, err := evalZhsAICourses(s, secret)
+	if err != nil {
+		return 0, err
+	}
+	return len(courses), nil
 }

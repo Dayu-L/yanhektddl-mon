@@ -166,7 +166,7 @@ const jsCollectEclass = `async (zyIds) => {
 // 页面主世界即 chromedp Runtime.evaluate 的默认执行环境,可以直接调用。
 
 // 智慧树 · 智慧课程列表(在智慧树自家域的页面内执行)。
-// 第一行是登录态兜底:未登录时页面会被弹到 passport.zhihuishu.com(统一登录),
+// 第一行是登录态兜底:未登录时页面会被弹到 login.zhihuishu.com(统一登录),
 // 那里发跨域请求只会拿到 "Failed to fetch",不如直接报 login-page 让 Go 侧
 // 归到「未登录」,日志与登录轮询才不会误判。
 const jsZhsAICourses = `async (secretStr) => {
@@ -186,6 +186,28 @@ const jsZhsAICourses = `async (secretStr) => {
     const rt = j.rt || j.result;
     if (!Array.isArray(rt)) return JSON.stringify({ok: false, why: (j.msg || j.message || 'no-list')});
     return JSON.stringify({ok: true, courses: rt});
+  } catch (e) { return JSON.stringify({ok: false, why: String(e)}); }
+}`
+
+// 智慧树 · 登录态探测(免签接口 getLoginUserInfo,任意 zhihuishu.com 页面内可执行)。
+// 不能用「课程列表是否为空」判登录:实测未登录时列表接口也可能回 200 + 空数组,
+// 登录轮询会因此误判成功、把还没输完密码的窗口关掉。这里只认用户信息。
+const jsZhsLoginReady = `async () => {
+  if (!/(^|\.)zhihuishu\.com$/.test(location.hostname)) {
+    return JSON.stringify({ok: false, why: 'login-page'});
+  }
+  if (/^(passport|login)\./i.test(location.hostname)) {
+    return JSON.stringify({ok: false, why: 'login-page'});
+  }
+  try {
+    const r = await fetch('` + zhsLoginUserAPI + `?time=' + Date.now(), {credentials: 'include'});
+    if (!r.ok) return JSON.stringify({ok: false, why: 'HTTP ' + r.status});
+    const txt = await r.text();
+    let j = null;
+    try { j = JSON.parse(txt); } catch (e) { return JSON.stringify({ok: false, why: 'not-json'}); }
+    const u = j.result || j.rt;
+    if (u && (u.uuid || u.username || u.realName)) return JSON.stringify({ok: true});
+    return JSON.stringify({ok: false, why: 'no-user'});
   } catch (e) { return JSON.stringify({ok: false, why: String(e)}); }
 }`
 

@@ -260,14 +260,23 @@ func (s *browserSession) resetTab() error {
 // 页面被用户关闭时自动重建标签页并重新导航。
 func pollProbe(s *browserSession, probeJS, reloadURL string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
+	fails := 0
 	for time.Now().Before(deadline) {
 		out, err := s.eval("(" + probeJS + ")()")
-		if err != nil { // 页面可能被用户关闭 -> 自动重开
-			if rerr := s.resetTab(); rerr == nil {
-				_ = s.navigate(reloadURL, 0)
-				s.bringToFront()
+		if err != nil {
+			// 单次 eval 失败多半是页面正在跳转(登录页重定向会换掉执行上下文)。
+			// 这时候重开页面会把用户刚输入的账号密码刷掉,所以连续失败够久
+			// (约 12 秒)才当成"窗口被关掉"去重开。
+			fails++
+			if fails >= 4 {
+				if rerr := s.resetTab(); rerr == nil {
+					_ = s.navigate(reloadURL, 0)
+					s.bringToFront()
+				}
+				fails = 0
 			}
 		} else {
+			fails = 0
 			var chk struct {
 				Ok bool `json:"ok"`
 			}
@@ -314,7 +323,9 @@ func waitLoginAita(s *browserSession, timeout time.Duration) bool {
 // waitLoginZhihuishu 登录向导第 3 步(可选):登录智慧树在线学堂。
 // 该平台用微信扫码/手机号登录,登录态与乐学的 CAS 互不相干,
 // 所以单独开一次窗口轮询;超时则跳过该可选数据源(智慧课程)。
-func waitLoginZhihuishu(s *browserSession, secret string, timeout time.Duration) bool {
+// 轮询只认用户信息(jsZhsLoginReady):课程列表为空不等于没登录,
+// 拿列表判会把「还没输完密码」的窗口提前关掉。
+func waitLoginZhihuishu(s *browserSession, timeout time.Duration) bool {
 	_ = s.navigate(zhsHomeURL, 0)
 	s.bringToFront()
 	fmt.Println()
@@ -324,19 +335,14 @@ func waitLoginZhihuishu(s *browserSession, secret string, timeout time.Duration)
 	fmt.Printf("    %d 秒后自动继续(不登录则跳过该数据源)\n", int(timeout.Seconds()))
 	fmt.Println("------------------------------------------------------------")
 	fmt.Println()
-	return pollProbe(s, zhsProbeExpr(secret), zhsHomeURL, timeout)
+	return pollProbe(s, jsZhsLoginReady, zhsHomeURL, timeout)
 }
 
 // ensureZhsLogin 给可选数据源「智慧树」一次登录机会:已登录则直接返回,
 // 未登录才弹提示;探测异常(网络/接口改动)不打扰用户,静默返回 false,
 // 后面阶段 4 会再记一次具体原因。
 func ensureZhsLogin(s *browserSession) bool {
-	secret, err := zhsSecret()
-	if err != nil {
-		logger.Printf("[智慧树] 签名参数计算失败:%v", err)
-		return false
-	}
-	ok, perr := zhsProbe(s, secret)
+	ok, perr := zhsProbe(s)
 	if ok {
 		fmt.Println(">> 智慧树:已登录")
 		return true
@@ -345,7 +351,7 @@ func ensureZhsLogin(s *browserSession) bool {
 		logger.Printf("[智慧树] 登录探测异常:%v", perr)
 		return false
 	}
-	return waitLoginZhihuishu(s, secret, zhsLoginTO)
+	return waitLoginZhihuishu(s, zhsLoginTO)
 }
 
 type collectResult struct {

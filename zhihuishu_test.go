@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -228,25 +227,28 @@ func TestBuildReportUsesExplicitStatusAndURL(t *testing.T) {
 	}
 }
 
-// 轮询用的探测表达式必须是「零参函数 -> Promise」,pollProbe 会包成
-// (<expr>)() 后按 {ok:bool} 解析;同时 secretStr 必须被正确转义进 JS。
-func TestZhsProbeExpr(t *testing.T) {
+// 登录轮询用的探测表达式必须是「零参函数 -> Promise」,pollProbe 会包成
+// (<expr>)() 后按 {ok:bool} 解析。判登录只认免签的 getLoginUserInfo:
+// 课程列表为空不能当「没登录」(会把还没输完密码的窗口提前关掉)。
+func TestZhsLoginProbeExpr(t *testing.T) {
 	secret, err := zhsSecret()
 	if err != nil {
 		t.Fatalf("计算 secretStr 失败:%v", err)
 	}
 	if secret != "yaVfYIJIdqrHDXsDL3vsYw==" {
-		t.Fatalf("探测用的 secretStr 应为 {} 的密文,实际 %q", secret)
+		t.Fatalf("secretStr 应为 {} 的密文,实际 %q", secret)
 	}
-	expr := zhsProbeExpr(secret)
-	if !strings.HasPrefix(expr, "() => ") {
-		t.Fatalf("应为零参函数表达式,实际开头:%s", expr[:20])
+	if !strings.HasPrefix(jsZhsLoginReady, "async () =>") {
+		t.Fatalf("登录探测应为零参函数表达式,实际开头:%s", jsZhsLoginReady[:20])
 	}
-	if !strings.Contains(expr, strconv.Quote(secret)) {
-		t.Fatal("secretStr 未被正确转义进表达式")
-	}
-	if strings.Count(expr, "() =>") != 1 {
+	if strings.Count(jsZhsLoginReady, "() =>") != 1 {
 		t.Fatal("只应包一层零参函数")
+	}
+	if !strings.Contains(jsZhsLoginReady, "getLoginUserInfo") {
+		t.Fatal("登录探测应请求 getLoginUserInfo")
+	}
+	if strings.Contains(jsZhsLoginReady, "queryStudentAICourseList") {
+		t.Fatal("登录探测不应依赖课程列表(空列表不等于未登录)")
 	}
 }
 
@@ -264,11 +266,7 @@ func TestZhsProbeUnauthenticated(t *testing.T) {
 	}
 	defer s.close()
 
-	secret, err := zhsSecret()
-	if err != nil {
-		t.Fatalf("计算 secretStr 失败:%v", err)
-	}
-	ok, perr := zhsProbe(s, secret)
+	ok, perr := zhsProbe(s)
 	if perr != nil {
 		t.Fatalf("探测应把「没登录」判成 ok=false,不该返回错误:%v", perr)
 	}

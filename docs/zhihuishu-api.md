@@ -29,6 +29,20 @@
 
 结论：沿用现有 Edge 专用 profile 登录一次，之后所有接口都能在页面内以 `fetch(url, {credentials:'include'})` 调通；Go 侧无需处理登录流程，只需保证 profile 已登录、会话过期时提示重登。
 
+### 1.1 登录态探测【实测】
+
+- 未登录时学生首页（`onlineweb.zhihuishu.com/onlinestuh5`）会被弹到统一登录
+  `https://login.zhihuishu.com/?origin=zhs&service=.../gateway/f/v1/login/gologin?...`【实测】；
+  登录完成后由 `service` 参数跳回学生首页。轮询期间页面在 `login.*` 域上，探测必须先按
+  「当前是登录页」判掉，别在那儿发跨域请求。
+- **判登录只认 `getLoginUserInfo`**：未登录时它不报错，只是没有 `result`（`result` 为空对象/缺失）；
+  登录后返回 `uuid` / `realName` / `username`。从 `onlineweb.zhihuishu.com` 与
+  `ai-smart-course-student-pro.zhihuishu.com` 域内 `fetch` 都能通（CORS 已放开），
+  所以登录轮询可以直接在登录页之外的任意智慧树页面里跑。
+- **不要用课程列表判登录**：未登录 / 半登录态下 `queryStudentAICourseList` 也可能回
+  HTTP 200 + 空数组。拿它当登录判据会出现两种故障：登录轮询提前判成功（还没输完密码窗口就被关掉）、
+  状态显示「已登录」但课程与作业为空。课程列表只用来取数据，登录态一律走 `getLoginUserInfo`。
+
 ---
 
 ## 2. 统一签名参数 `secretStr`
