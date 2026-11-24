@@ -41,7 +41,8 @@
   }
   .filterbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px;
-    margin-block-end: var(--gap);
+    /* 与标题行、下方栅格都要留呼吸:标题行本身无下边距 */
+    margin-block: 22px var(--gap);
   }
   .chipgroup { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
   .chiplabel { color: var(--muted); font-size: 12px; margin-inline-end: 2px; }
@@ -184,7 +185,7 @@
     .page { padding-inline: 16px; }
     .titlebar { flex-wrap: wrap; padding-block-start: 24px; }
     .stampbox { width: 100%; margin-inline-start: 0; justify-content: flex-start; }
-    .filterbar { gap: 6px 12px; }
+    .filterbar { gap: 6px 12px; margin-block-start: 16px; }
     .chip { padding: 3px 10px; }
     .hero {
       padding: 16px;
