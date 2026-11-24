@@ -538,8 +538,9 @@ func collectSnapshot(days int, visible, forceDeep, autoLogin bool) (*Snapshot, e
 // collectSnapshotBackground 后台刷新专用:会话失效时只返回 errNotLoggedIn,
 // 不换成可见窗口等登录 —— 该不该登录交给设置页的单源登录决定,
 // 否则用户点一下刷新就会有个 Edge 窗口自己跳到统一身份认证页。
-func collectSnapshotBackground(days int) (*Snapshot, error) {
-	return collectSnapshotMode(false, false, false, false)
+// deep=true 强制深度扫描(设置页的「深度扫描」入口)。
+func collectSnapshotBackground(days int, deep bool) (*Snapshot, error) {
+	return collectSnapshotMode(false, false, deep, false)
 }
 
 // collectSnapshotForLogin 登录向导专用:直接以可见窗口进入“等用户登录”流程。

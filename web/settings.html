@@ -161,6 +161,19 @@
   </section>
 
   <section>
+    <div class="row srow">
+      <div class="grow">
+        <div class="label">深度扫描</div>
+        <div class="hint">逐门课扫一遍,补齐已完成、已过期与远期任务。平时的「刷新数据」只取近期待办,几分钟就好。</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="deepScan" type="button">开始深度扫描</button>
+      </div>
+    </div>
+    <div class="hint" id="deepMsg" role="status"></div>
+  </section>
+
+  <section>
     <div class="row">
       <div class="grow">
         <div class="label">自动检测</div>
@@ -418,6 +431,96 @@ async function load() {
   syncTimeState();
 }
 
+// ---------------------------------------------------------------- 深度扫描
+const deepBtn = document.getElementById('deepScan');
+const deepMsg = document.getElementById('deepMsg');
+let deepTimer = null;
+
+function setDeepBusy(on, label) {
+  deepBtn.disabled = on;
+  deepBtn.innerHTML = on
+    ? '<span class="spinner"></span>' + (label || '扫描中…')
+    : '开始深度扫描';
+}
+
+async function deepSummary() {
+  try {
+    const d = await fetch('/api/data', { cache: 'no-store' }).then(r => r.json());
+    const at = d.fetched_at ? ' · ' + d.fetched_at.slice(5, 16).replace('T', ' ') : '';
+    deepMsg.textContent = '深度扫描完成:' + d.course_count + ' 门课 · ' +
+      d.item_count + ' 条任务' + at;
+  } catch (e) {
+    deepMsg.textContent = '深度扫描已完成,打开速查窗口查看最新数据';
+  }
+}
+
+// 扫描是后台任务:轮询 /api/status,跑完再报一次结果
+function pollDeep() {
+  if (deepTimer) return;
+  const started = Date.now();
+  let seen = false;
+  deepTimer = setInterval(async () => {
+    let st;
+    try {
+      st = await fetch('/api/status', { cache: 'no-store' }).then(r => r.json());
+    } catch (e) {
+      return;
+    }
+    if (st.running) {
+      seen = true;
+      deepMsg.textContent = st.deep
+        ? '深度扫描进行中:正在逐门课读取,可以关掉这个窗口…'
+        : '正在抓取数据,深度扫描会排在它后面…';
+      return;
+    }
+    // 刚点下去时后台还没置位,给它几秒
+    if (!seen && Date.now() - started < 6000) return;
+    clearInterval(deepTimer);
+    deepTimer = null;
+    setDeepBusy(false);
+    deepSummary();
+  }, 2000);
+}
+
+async function startDeepScan() {
+  setDeepBusy(true);
+  deepMsg.textContent = '正在启动深度扫描…';
+  try {
+    const res = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deep: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setDeepBusy(false);
+      deepMsg.textContent = data.error || '启动失败,请稍后重试';
+      return;
+    }
+    deepMsg.textContent = '深度扫描进行中:正在逐门课读取,可以关掉这个窗口…';
+    pollDeep();
+  } catch (e) {
+    setDeepBusy(false);
+    deepMsg.textContent = '无法连接本地服务,请关闭窗口后重新打开程序';
+  }
+}
+
+deepBtn.addEventListener('click', startDeepScan);
+
+// 打开设置页时,如果已经在扫,直接把状态接上
+async function syncDeepState() {
+  try {
+    const st = await fetch('/api/status', { cache: 'no-store' }).then(r => r.json());
+    if (st.running) {
+      setDeepBusy(true);
+      deepMsg.textContent = st.deep ? '深度扫描进行中…' : '正在抓取数据…';
+      pollDeep();
+    }
+  } catch (e) {
+    /* 本地服务异常时由其他区块兜底提示 */
+  }
+}
+
 saveBtn.addEventListener('click', async () => {
   const radio = document.querySelector('input[name="closeBehavior"]:checked');
   const body = {
@@ -450,6 +553,7 @@ saveBtn.addEventListener('click', async () => {
 
 load();
 loadLoginState();
+syncDeepState();
 </script>
 </body>
 </html>

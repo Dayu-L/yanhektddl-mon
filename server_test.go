@@ -228,3 +228,46 @@ func TestSharedStylesheet(t *testing.T) {
 		}
 	}
 }
+
+// /api/refresh:已有刷新在跑时不能排队(同一 profile 只能有一个浏览器),
+// 直接回 409;深扫/GitHub 深度入口靠 body {"deep":true} 区分。
+func TestRefreshBusyGuard(t *testing.T) {
+	srv := httptest.NewServer(newMux(portFirst))
+	defer srv.Close()
+
+	// 占用刷新位(不真正启动抓取)
+	refreshState.mu.Lock()
+	refreshState.running = true
+	refreshState.deep = true
+	refreshState.mu.Unlock()
+	t.Cleanup(func() {
+		refreshState.mu.Lock()
+		refreshState.running = false
+		refreshState.deep = false
+		refreshState.mu.Unlock()
+	})
+
+	resp, err := http.Post(srv.URL+"/api/refresh", "application/json",
+		strings.NewReader(`{"deep":true}`))
+	if err != nil {
+		t.Fatalf("POST /api/refresh 失败:%v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 409 {
+		t.Fatalf("已有刷新在跑时应返回 409,实际 %d", resp.StatusCode)
+	}
+
+	// /api/status 要能告诉设置页"正在深扫"
+	sres, err := http.Get(srv.URL + "/api/status")
+	if err != nil {
+		t.Fatalf("GET /api/status 失败:%v", err)
+	}
+	defer sres.Body.Close()
+	var st map[string]bool
+	if err := json.NewDecoder(sres.Body).Decode(&st); err != nil {
+		t.Fatalf("/api/status 应为 JSON:%v", err)
+	}
+	if !st["running"] || !st["deep"] {
+		t.Fatalf("status 应报告 running+deep,实际 %+v", st)
+	}
+}

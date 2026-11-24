@@ -100,7 +100,11 @@ gh release upload v0.4.1 dist\yanhektddl-setup-0.4.1.exe -R Dayu-L/yanhektddl-mo
 - 新增 Windows 能力优先写进 `platform_windows.go`(纯 syscall);**禁止引入需要 CGO 的依赖**(本机无 gcc,且会破坏单文件分发)
 - 抓取逻辑改动的验收标准:`--fetch` 全链路真实跑通,不是"编译通过"
 - 新增数据源一律「尽力而为」:未登录/接口异常只能记日志跳过(参考 `browser.go` 阶段 4 + `logZhsSkip`),不得让延河/乐学的核心流程失败
-- **快照合并**:快路径(`/api/todos`)只覆盖近期待办,写快照时必须用 `carryOverItems`
+- **刷新入口**有两个:`/api/refresh`(空 body,快路径)与 `/api/refresh` + `{"deep":true}`
+(设置页「深度扫描」,走 `collectSnapshotBackground(days, true)`);两者都经 `startRefresh`
+抢占刷新位,并发时回 409,`/api/status` 用 `deep` 字段告诉设置页当前是不是深扫。
+
+**快照合并**:快路径(`/api/todos`)只覆盖近期待办,写快照时必须用 `carryOverItems`
 把上一轮其余项(已完成 / 已过期 / 远期任务 / 临时不可用的数据源)带过来;只有深度扫描
 可以整体覆盖。否则点一次「刷新数据」,速查页的已完成与远期任务会整片消失。
 

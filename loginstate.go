@@ -191,11 +191,14 @@ func startSourceLogin(key string) (bool, string) {
 		}()
 		if needRefresh {
 			// 浏览器已关、锁已放:用正常的后台刷新把新数据取回来
-			runRefresh(refreshDays)
+			startRefresh(refreshDays, false)
 		}
 	}()
 	return true, ""
 }
+
+// loginSourceRunning 是否有单源登录窗口在等待用户输入。
+func loginSourceRunning() bool { return loginSourceBusy.Load() }
 
 // checkLoginSources 真起一次 headless Edge,依次探测乐学 / 延河课堂 / 智慧树。
 // 全程不开可见窗口、不打断用户:返回给设置页的提示(空 = 正常完成)。

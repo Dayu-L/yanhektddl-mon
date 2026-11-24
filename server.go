@@ -113,27 +113,38 @@ func marshalNoEscape(v interface{}) ([]byte, error) {
 var refreshState struct {
 	mu            sync.Mutex
 	running       bool
+	deep          bool // 正在跑的是深度扫描(设置页据此显示"深度扫描中")
 	loginRequired bool
 }
 
-func runRefresh(days int) {
+// startRefresh 抢占刷新位并异步跑一次抓取。
+// 已有刷新/登录在跑时返回 false(不排队:同一 profile 同时只能有一个浏览器)。
+func startRefresh(days int, deep bool) bool {
 	refreshState.mu.Lock()
 	if refreshState.running {
 		refreshState.mu.Unlock()
-		return
+		return false
 	}
 	// 登录向导占着浏览器(可见窗口等用户输入,可能长达 10 分钟):
 	// 直接拒绝,避免刷新排在 profile 锁后面白等
-	if loginBusy() {
+	if loginBusy() || loginSourceRunning() {
 		refreshState.mu.Unlock()
 		logger.Printf("[刷新] 登录流程进行中,请等登录完成后再刷新")
-		return
+		return false
 	}
 	refreshState.running = true
+	refreshState.deep = deep
 	refreshState.mu.Unlock()
+	go runRefresh(days, deep)
+	return true
+}
+
+// runRefresh 执行一次抓取(调用方必须已置 refreshState.running)。
+func runRefresh(days int, deep bool) {
 	defer func() {
 		refreshState.mu.Lock()
 		refreshState.running = false
+		refreshState.deep = false
 		refreshState.mu.Unlock()
 	}()
 
@@ -142,10 +153,14 @@ func runRefresh(days int) {
 	profileMu.Lock()
 	defer profileMu.Unlock()
 
-	logger.Printf("[刷新] 开始后台抓取…")
+	if deep {
+		logger.Printf("[刷新] 开始深度扫描(逐门课,补齐已完成/已过期/问卷)…")
+	} else {
+		logger.Printf("[刷新] 开始后台抓取…")
+	}
 	// 后台刷新（含开机首轮与定时巡检）不弹登录窗:会话失效就只标记状态，
 	// 由设置页的单源登录按钮决定要不要登录，避免窗口自己跳出来。
-	snap, err := collectSnapshotBackground(days)
+	snap, err := collectSnapshotBackground(days, deep)
 	if err != nil {
 		logger.Printf("[刷新] 抓取失败:%v", err)
 		needLogin := errors.Is(err, errNotLoggedIn) || strings.Contains(err.Error(), "登录")
@@ -157,7 +172,7 @@ func runRefresh(days int) {
 	}
 	setLoginRequired(false)
 	writeReportsFromSnapshot(snap, days)
-	logger.Printf("[刷新] 完成:%d 门课 %d 条任务", len(snap.Courses), len(snap.Items))
+	logger.Printf("[刷新] 完成(deep=%v):%d 门课 %d 条任务", deep, len(snap.Courses), len(snap.Items))
 }
 
 // refreshDays 速查页/登录后的报告口径:与 /api/refresh 一致
@@ -221,6 +236,7 @@ func newMux(port int) http.Handler {
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, 200, map[string]bool{
 			"running":        refreshRunning(),
+			"deep":           refreshRunningDeep(),
 			"login_required": loginRequired(),
 		})
 	})
@@ -321,13 +337,22 @@ func newMux(port int) http.Handler {
 		logger.Printf("[登录] 开始单源登录:%s", sourceName(body.Source))
 		sendJSON(w, 200, loginStatusSnapshot())
 	})
+	// /api/refresh  body: {"deep":true} -> 强制深度扫描(设置页「深度扫描」入口);
+	// 缺省走快路径。已有刷新在跑时返回 409。
 	mux.HandleFunc("/api/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			sendText(w, 404, "not found")
 			return
 		}
-		go runRefresh(refreshDays)
-		sendJSON(w, 200, map[string]bool{"ok": true})
+		var body struct {
+			Deep bool `json:"deep"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body) // 空 body = 快路径
+		if !startRefresh(refreshDays, body.Deep) {
+			sendJSON(w, 409, map[string]string{"error": "正在抓取,请稍候"})
+			return
+		}
+		sendJSON(w, 200, map[string]interface{}{"ok": true, "deep": body.Deep})
 	})
 	mux.HandleFunc("/api/ignore", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -472,6 +497,12 @@ func refreshRunning() bool {
 	refreshState.mu.Lock()
 	defer refreshState.mu.Unlock()
 	return refreshState.running
+}
+
+func refreshRunningDeep() bool {
+	refreshState.mu.Lock()
+	defer refreshState.mu.Unlock()
+	return refreshState.running && refreshState.deep
 }
 
 func setLoginRequired(v bool) {
