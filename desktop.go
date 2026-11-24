@@ -80,7 +80,7 @@ func openSettingsWindow(port int) {
 
 	url := fmt.Sprintf("http://127.0.0.1:%d/settings", port)
 	if bin := findBrowserBin(); bin != "" {
-		_ = exec.Command(bin, "--app="+url, "--window-size=760,780").Start()
+		_ = exec.Command(bin, "--app="+url, "--window-size=760,660").Start()
 		logger.Printf(">> 已打开设置窗口")
 		applyWindowIconSoon(settingsTitle)
 		return
