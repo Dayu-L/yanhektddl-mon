@@ -33,8 +33,44 @@
   }
   .row { display: flex; align-items: flex-start; gap: 16px; }
   .row .grow { flex: 1; min-width: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* 登录状态标题行:两个按钮在右侧,窄屏整体换行,别把说明文字挤成竖排 */
+  .srow { flex-wrap: wrap; }
+  .srow .actions { margin-inline-start: auto; }
   .label { font-size: 15px; font-weight: 600; line-height: 22px; }
   .hint { margin-block-start: 3px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+
+  /* 登录状态:三路数据源各一行,左侧圆点表示结论 */
+  .sources { display: grid; gap: 8px; margin-block-start: 14px; }
+  .source {
+    display: grid; grid-template-columns: 8px minmax(0, 1fr) auto;
+    align-items: center; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    & .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--control);
+    }
+    & .s-main { min-width: 0; }
+    & .s-name { font-size: 13px; font-weight: 600; }
+    & .s-tag {
+      margin-inline-start: 6px; padding: 0 5px; border-radius: 4px;
+      background: var(--raised); color: var(--muted);
+      font-size: 11px; font-weight: 500;
+    }
+    & .s-why {
+      margin-block-start: 1px; color: var(--faint); font-size: 12px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    & .s-state { font-size: 12px; color: var(--muted); }
+    &.ok {
+      & .dot { background: var(--positive); }
+      & .s-state { color: var(--positive); }
+    }
+    &.bad {
+      & .dot { background: var(--negative); }
+      & .s-state { color: var(--negative); }
+    }
+  }
 
   /* 开关:隐藏原生 checkbox 的外观但保留焦点与键盘操作 */
   .switch {
@@ -82,7 +118,11 @@
     & input { flex: none; accent-color: var(--data-hue); }
     & b { display: block; font-size: 14px; font-weight: 600; }
   }
-  @media (width <= 520px) { .choices { grid-template-columns: 1fr; } }
+  @media (width <= 560px) {
+    .srow .grow { flex-basis: 100%; }
+    .srow .actions { width: 100%; margin-inline-start: 0; }
+    .choices { grid-template-columns: 1fr; }
+  }
 
   /* 底部保存位 */
   .card > .btn { margin-block-start: 6px; }
@@ -96,6 +136,22 @@
   </div>
 
   <h1>设置</h1>
+
+  <section>
+    <div class="row srow">
+      <div class="grow">
+        <div class="label">登录状态</div>
+        <div class="hint">最近一次刷新或巡检得到的结论;久未打开、换网络后可能已失效。</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="checkLogin" type="button">检查登录状态</button>
+        <a class="btn btn-ghost" href="/login?from=settings">重新登录</a>
+      </div>
+    </div>
+
+    <ul class="sources" id="sources"></ul>
+    <div class="hint" id="checkMsg" role="status"></div>
+  </section>
 
   <section>
     <div class="row">
@@ -151,6 +207,134 @@ function showStatus(text, cls) {
   statusEl.className = 'status ' + (cls || '');
 }
 
+// ---------------------------------------------------------------- 登录状态
+// 三路数据源:乐学必需,延河/智慧树可选(未登录只是少一块数据)
+const SOURCES = [
+  { key: 'eclass', name: '乐学', tag: '必需', desc: '作业 · 测验 · 考试' },
+  { key: 'aita', name: '延河课堂', tag: '可选', desc: '课程关闭时间' },
+  { key: 'zhs', name: '智慧树', tag: '可选', desc: '共享课 · 智慧课程' },
+];
+const CHECK_MAX_MS = 3 * 60 * 1000; // 浏览器起停 + 三次探测的上限
+
+const checkBtn = document.getElementById('checkLogin');
+const sourcesEl = document.getElementById('sources');
+const checkMsgEl = document.getElementById('checkMsg');
+let pollTimer = null;
+let pollDeadline = 0;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// 只给「多久以前」的粗粒度,不暴露具体检查时刻
+function relTime(iso) {
+  const t = Date.parse(iso || '');
+  if (!t) return '';
+  const mins = Math.round((Date.now() - t) / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return mins + ' 分钟前';
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return hours + ' 小时前';
+  return Math.round(hours / 24) + ' 天前';
+}
+
+function setChecking(on) {
+  checkBtn.disabled = on;
+  checkBtn.innerHTML = on
+    ? '<span class="spinner"></span>检查中…'
+    : '检查登录状态';
+  if (on) checkMsgEl.textContent = '正在起无窗口浏览器逐个探测,约 20 秒…';
+}
+
+// 检查结果提示只活 3 分钟:避免隔天打开页面还挂着“正在抓取数据…”
+function freshMessage(st) {
+  if (!st.check_message) return '';
+  const t = Date.parse(st.check_message_at || '');
+  return t && Date.now() - t < 3 * 60000 ? st.check_message : '';
+}
+
+function renderLoginState(st) {
+  if (!st) return;
+  const srcs = st.sources || {};
+  sourcesEl.innerHTML = SOURCES.map(s => {
+    const v = srcs[s.key];
+    let cls = 'unknown';
+    let state = '未检查过';
+    let why = '点「检查登录状态」获取最新结论';
+    if (v) {
+      cls = v.ok ? 'ok' : 'bad';
+      state = v.ok ? '已登录' : '未登录';
+      why = (v.why || s.desc) + (v.checked_at ? ' · ' + relTime(v.checked_at) + '检查' : '');
+    }
+    return '<li class="source ' + cls + '">'
+      + '<span class="dot" aria-hidden="true"></span>'
+      + '<div class="s-main">'
+      + '<div class="s-name">' + s.name + '<span class="s-tag">' + s.tag + '</span></div>'
+      + '<div class="s-why">' + esc(why) + '</div>'
+      + '</div>'
+      + '<span class="s-state">' + esc(state) + '</span>'
+      + '</li>';
+  }).join('');
+  checkMsgEl.textContent = freshMessage(st);
+  if (st.checking) setChecking(true);
+}
+
+async function fetchLoginState() {
+  return await fetch('/api/login-state', { cache: 'no-store' }).then(r => r.json());
+}
+
+async function loadLoginState() {
+  try {
+    const st = await fetchLoginState();
+    renderLoginState(st);
+    if (st.checking) startPoll();
+  } catch (e) {
+    checkMsgEl.textContent = '读取登录状态失败,请关闭窗口后重新打开程序';
+  }
+}
+
+function startPoll() {
+  pollDeadline = Date.now() + CHECK_MAX_MS;
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    let st;
+    try {
+      st = await fetchLoginState();
+    } catch (e) {
+      return; // 偶发失败下一轮再试
+    }
+    if (Date.now() > pollDeadline) {
+      clearInterval(pollTimer); pollTimer = null;
+      setChecking(false);
+      checkMsgEl.textContent = '检查超时,可能是浏览器或网络异常,请稍后重试';
+      return;
+    }
+    renderLoginState(st);
+    if (!st.checking) {
+      clearInterval(pollTimer); pollTimer = null;
+      setChecking(false);
+    }
+  }, 1200);
+}
+
+checkBtn.addEventListener('click', async () => {
+  setChecking(true);
+  try {
+    const res = await fetch('/api/check-login', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setChecking(false);
+      checkMsgEl.textContent = data.error || '检查启动失败,请稍后重试';
+      return;
+    }
+    renderLoginState(data);
+    startPoll();
+  } catch (e) {
+    setChecking(false);
+    checkMsgEl.textContent = '无法连接本地服务,请关闭窗口后重新打开程序';
+  }
+});
+
 function syncTimeState() {
   const on = autoEl.checked;
   timeEl.disabled = !on;
@@ -204,6 +388,7 @@ saveBtn.addEventListener('click', async () => {
 });
 
 load();
+loadLoginState();
 </script>
 </body>
 </html>

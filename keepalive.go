@@ -70,9 +70,11 @@ func startKeepAlive() {
 				}
 				failStreak = 0
 				setLoginRequired(false)
+				recordSource(sourceEclass, true, "")
 			case needLogin:
 				failStreak++
 				setLoginRequired(true)
+				recordSource(sourceEclass, false, "会话与统一身份认证均已失效,需要重新登录")
 				logger.Printf("[保温] 会话与统一身份认证均已失效,需要重新登录(已连续失效 %d 轮)", failStreak)
 			default:
 				failStreak++ // 浏览器/网络偶发故障,不改变登录状态
@@ -97,7 +99,12 @@ func pingEclass() (ok, needLogin bool) {
 		logger.Printf("[保温] 导航失败(本轮跳过):%v", err)
 		return false, false
 	}
-	// 轮询窗口要盖住 CAS 静默续期的重定向链(与 tryCollect 阶段 2 相同)
+	return probeEclass(s)
+}
+
+// probeEclass 轮询 /api/todos 判断乐学会话是否可用(导航由调用方负责)。
+// 轮询窗口要盖住 CAS 静默续期的重定向链(与 tryCollect 阶段 2 相同)。
+func probeEclass(s *browserSession) (ok, needLogin bool) {
 	deadline := time.Now().Add(todosWaitTO)
 	for time.Now().Before(deadline) {
 		out, err := s.eval("(" + jsFetchTodos + ")()")

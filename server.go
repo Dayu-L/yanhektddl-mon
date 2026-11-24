@@ -269,6 +269,23 @@ func newMux(port int) http.Handler {
 	mux.HandleFunc("/api/login-status", func(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, 200, loginSnapshot())
 	})
+	// 三路数据源的登录态(设置页):最近一次已知结论 + 是否正在检查
+	mux.HandleFunc("/api/login-state", func(w http.ResponseWriter, r *http.Request) {
+		sendJSON(w, 200, loginStatusSnapshot())
+	})
+	// 手动检查登录状态:起一次 headless Edge 逐个探测(异步,页面轮询 /api/login-state)
+	mux.HandleFunc("/api/check-login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			sendText(w, 404, "not found")
+			return
+		}
+		if !startLoginCheck() {
+			sendJSON(w, 409, map[string]string{"error": "正在检查,请稍候"})
+			return
+		}
+		logger.Printf("[检查] 开始探测三路会话…")
+		sendJSON(w, 200, loginStatusSnapshot())
+	})
 	mux.HandleFunc("/api/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			sendText(w, 404, "not found")

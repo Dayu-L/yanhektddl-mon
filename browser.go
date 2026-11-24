@@ -353,7 +353,9 @@ type collectResult struct {
 	Items      []Item
 	Submitted  map[string][]interface{}
 	Deep       bool
-	ZhsSkipped bool // 可选数据源「智慧树」本次被跳过(未登录/接口异常)
+	AitaOK     bool   // 延河课堂课程列表本次是否取到(可选数据源)
+	ZhsSkipped bool   // 可选数据源「智慧树」本次被跳过(未登录/接口异常)
+	ZhsWhy     string // 跳过的原因,给设置页的登录状态用
 }
 
 // fetchAitaCourses 延河课堂课程列表(含课程关闭时间 EndAt)。
@@ -385,6 +387,27 @@ func fetchAitaCourses(s *browserSession) ([]Course, bool) {
 		time.Sleep(700 * time.Millisecond)
 	}
 	return nil, false
+}
+
+// probeAita 探测延河课堂会话(可选数据源):只看课程接口是否放行,不抓课程。
+// 导航刚回来时 JS 上下文可能未就绪,重试几次;拿不到明确结果按未登录处理。
+func probeAita(s *browserSession) bool {
+	if err := s.navigate(portalURL, 0); err != nil {
+		return false
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		out, err := s.eval("(" + jsCheckLogin + ")()")
+		if err == nil {
+			var res struct {
+				OK bool `json:"ok"`
+			}
+			if json.Unmarshal([]byte(out), &res) == nil {
+				return res.OK
+			}
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	return false
 }
 
 // tryCollect 四阶段:
@@ -482,16 +505,19 @@ func tryCollect(s *browserSession, deep bool) (*collectResult, error) {
 	// 放在最后:它会把浏览器导航到智慧树域,不能影响上面的 eclass 抓取。
 	// 该平台未登录/接口异常都只跳过,不阻死延河课堂的主流程。
 	zhsSkipped := false
+	zhsWhy := ""
 	if ais, aiItems, zhsErr := collectZhihuishu(s, deep); zhsErr != nil {
 		logZhsSkip(zhsErr)
 		zhsSkipped = true
+		zhsWhy = zhsErr.Error()
 	} else if len(ais) > 0 {
 		courses = append(courses, ais...)
 		items = append(items, aiItems...)
 		fmt.Printf(">> 智慧树:%d 门课,任务 %d 条\n", len(ais), len(aiItems))
 	}
 	return &collectResult{Courses: courses, Items: items,
-		Submitted: submitted, Deep: deep, ZhsSkipped: zhsSkipped}, nil
+		Submitted: submitted, Deep: deep, AitaOK: aitaOK,
+		ZhsSkipped: zhsSkipped, ZhsWhy: zhsWhy}, nil
 }
 
 // ---------------------------------------------------------------- 主流程
@@ -600,9 +626,12 @@ func collectSnapshotMode(visible, forceLogin, forceDeep bool) (*Snapshot, error)
 			cs, its, zerr := collectZhihuishu(s, deep)
 			if zerr != nil {
 				logZhsSkip(zerr)
+				res.ZhsWhy = zerr.Error()
 			} else {
 				res.Courses = append(res.Courses, cs...)
 				res.Items = append(res.Items, its...)
+				res.ZhsSkipped = false // 已补抓成功,登录态按已登录记
+				res.ZhsWhy = ""
 				fmt.Printf(">> 智慧树:%d 门课,任务 %d 条\n", len(cs), len(its))
 			}
 		} else {
@@ -643,6 +672,19 @@ func saveCollected(res *collectResult, deep bool) (*Snapshot, error) {
 	}
 	if err := saveSnapshot(snap); err != nil {
 		return nil, err
+	}
+	// 顺带记下三路会话的最近结论:设置页显示登录状态时不必再跑一遍浏览器。
+	// 走到这里乐学必然通了(/api/todos 成功),可选数据源按本次是否取到记。
+	recordSource(sourceEclass, true, "")
+	if res.AitaOK {
+		recordSource(sourceAita, true, "")
+	} else {
+		recordSource(sourceAita, false, "会话失效,课程关闭时间沿用上次快照")
+	}
+	if res.ZhsSkipped {
+		recordSource(sourceZhs, false, res.ZhsWhy)
+	} else {
+		recordSource(sourceZhs, true, "")
 	}
 	return snap, nil
 }

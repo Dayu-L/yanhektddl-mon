@@ -274,6 +274,23 @@ func zhsProbe(s *browserSession, secret string) (bool, error) {
 	return true, nil
 }
 
+// probeZhs 给设置页「检查登录状态」用的轻量探测:返回 (已登录, 未登录/异常的原因)。
+// 与 zhsProbe 的区别只在把原因整理成给人看的句子。
+func probeZhs(s *browserSession) (bool, string) {
+	secret, err := zhsSecret()
+	if err != nil {
+		return false, "签名参数计算失败:" + err.Error()
+	}
+	ok, err := zhsProbe(s, secret)
+	if ok {
+		return true, ""
+	}
+	if err == nil {
+		return false, "未登录或会话已失效,本次不抓智慧课程"
+	}
+	return false, "探测异常(网络或接口改动):" + err.Error()
+}
+
 // evalZhsAICourses 在学生首页里取智慧课程列表。
 // secretStr 由 Go 侧算好传进去;页面 JS 只负责带 Cookie 发请求。
 func evalZhsAICourses(s *browserSession, secret string) ([]zhsCourse, error) {

@@ -16,6 +16,7 @@ yanhektddl-mon/
 ├─ report.go / types.go  # 数据模型、临期分组规则、Markdown/CSV 报告
 ├─ server.go / desktop.go# 本地 HTTP 服务(127.0.0.1:8765)、桌面模式、窗口开关
 ├─ tray.go / login.go    # 系统托盘、首次登录向导
+├─ loginstate.go         # 三路数据源登录态记录(login_status.json)+ 设置页「检查登录状态」
 ├─ platform_windows.go   # Win32 适配:控制台/DPI/单实例/窗口(纯 syscall,禁止引入 CGO)
 ├─ platform_other.go     # 非 Windows 占位
 ├─ web/                  # dashboard.html / login.html / settings.html / app.css(三页共用样式,构建时嵌入 exe)
@@ -99,7 +100,10 @@ gh release upload v0.4.1 dist\yanhektddl-setup-0.4.1.exe -R Dayu-L/yanhektddl-mo
 - 新增 Windows 能力优先写进 `platform_windows.go`(纯 syscall);**禁止引入需要 CGO 的依赖**(本机无 gcc,且会破坏单文件分发)
 - 抓取逻辑改动的验收标准:`--fetch` 全链路真实跑通,不是"编译通过"
 - 新增数据源一律「尽力而为」:未登录/接口异常只能记日志跳过(参考 `browser.go` 阶段 4 + `logZhsSkip`),不得让延河/乐学的核心流程失败
-- 新增数据源必须在采集出口经过 `normalize.go` 的 `normalizeItem`/`normalizeCourse`
+- 新增数据源时同步 `loginstate.go`:`recordSource` 记一份最近结论,设置页的登录状态与
+「检查登录状态」才会覆盖到它(键名在 `sourceXxx` 常量里加)。
+
+新增数据源必须在采集出口经过 `normalize.go` 的 `normalizeItem`/`normalizeCourse`
   (时间统一北京时间、id 字符串、kind 规范值、status 显式、url 最终地址),不得把平台特有格式写进快照;
   数据源自身的类型名(如 `ai_homework`)在 `canonicalKind` 里映射到规范值即可
 - 新增数据源时必须给 `Row.Platform` / `Course.Platform` 赋值(速查页据此打标签与筛选),并在 `docs/` 同步实测结论

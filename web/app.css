@@ -43,6 +43,7 @@
     --primary: #141414;       /* 唯一主操作:近黑 */
     --data-hue: #1d5fbf;      /* 主数据专用蓝 */
     --negative: #c4242a;
+    --positive: #1f8f4e;
     --negative-bg: #ffedea;
     --negative-ink: #831c1e;
     --positive-bg: #dcfae5;

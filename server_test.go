@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -122,6 +123,51 @@ func TestRenderPageIgnoreContract(t *testing.T) {
 	}
 	if strings.Contains(s, `"closes"`) {
 		t.Fatalf("渲染数据不应再包含 closes")
+	}
+}
+
+// 登录状态接口:没有任何记录时也要给出合法结构(设置页直接渲染它),
+// 且检查按钮只接受 POST。
+func TestLoginStateAPI(t *testing.T) {
+	oldBase := base
+	base = t.TempDir()
+	loginStatusMu.Lock()
+	loginStatusData = nil
+	loginStatusMu.Unlock()
+	t.Cleanup(func() {
+		base = oldBase
+		loginStatusMu.Lock()
+		loginStatusData = nil
+		loginStatusMu.Unlock()
+	})
+
+	srv := httptest.NewServer(newMux(portFirst))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/login-state")
+	if err != nil {
+		t.Fatalf("GET /api/login-state 失败:%v", err)
+	}
+	defer resp.Body.Close()
+	var got map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("登录状态响应应为 JSON:%v", err)
+	}
+	if _, ok := got["sources"]; !ok {
+		t.Fatalf("响应应包含 sources")
+	}
+	if checking, ok := got["checking"].(bool); !ok || checking {
+		t.Fatalf("初始 checking 应为 false,实际 %v", got["checking"])
+	}
+
+	// 检查登录会真的起浏览器,这里只验证方法守卫
+	resp2, err := http.Get(srv.URL + "/api/check-login")
+	if err != nil {
+		t.Fatalf("GET /api/check-login 失败:%v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 404 {
+		t.Fatalf("GET /api/check-login 应返回 404(只支持 POST),实际 %d", resp2.StatusCode)
 	}
 }
 

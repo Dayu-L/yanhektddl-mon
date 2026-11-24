@@ -5,6 +5,7 @@ browser_profile/
 ddl_data.json
 settings.json
 ignored.json
+login_status.json
 ddl_report.md
 ddl_report.csv
 
