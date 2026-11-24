@@ -62,23 +62,40 @@ a { color: inherit; }
 .stamp { color: var(--muted); font-size: 12px; }
 .stamp .num { color: var(--text); }
 
-/* ============ 数据源标签与筛选 ============ */
+/* ============ 数据源/类型标签与筛选 ============ */
 .plat {
   display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 6px;
   font-size: 11px; line-height: 16px; vertical-align: 1px;
   background: #eef3fb; color: #3a5f9e;
 }
 .plat.zhs { background: #eaf6ee; color: #2f7a4d; }
-.chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 var(--gap); }
-.chips[hidden] { display: none; }
+
+.filterbar {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px 20px; margin: 0 0 var(--gap);
+}
+.filterbar[hidden] { display: none; }
+.chipgroup { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.chiplabel { color: var(--muted); font-size: 12px; margin-right: 2px; }
 .chip {
   border: 1px solid var(--control); background: transparent; color: var(--muted);
   border-radius: 999px; padding: 4px 12px; font-size: 12px; line-height: 18px;
   font-family: inherit; cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
 }
 .chip:hover { border-color: var(--text); color: var(--text); }
+.chip:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 .chip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
 .chip .n { opacity: .65; margin-left: 4px; }
+.chip[aria-pressed="true"] .n { opacity: .8; }
+.chip-clear { border-style: dashed; }
+.chip-clear[hidden] { display: none; }
+.chip-zero { opacity: .5; }
+.chip-zero:hover { opacity: .8; }
+@media (max-width: 640px) {
+  .filterbar { gap: 6px 12px; }
+  .chip { padding: 3px 10px; }
+}
 
 /* ============ 登录失效横幅 ============ */
 .relogin {
@@ -276,7 +293,7 @@ button { font: inherit; }
     <a href="/login?from=banner">重新登录 →</a>
   </div>
 
-  <div class="chips" id="filters" hidden></div>
+  <div class="filterbar" id="filters" hidden></div>
 
   <div class="grid">
     <main class="col-main" id="main"></main>
@@ -334,7 +351,10 @@ const icon = (name, size) =>
 
 /* ---------- 渲染 ---------- */
 let DATA = null;
-let FILTER = "all"; // 数据源筛选:all / 乐学 / 智慧树
+// 两个正交的筛选维度,互不干扰:数据源(乐学/智慧树) × 任务类型(作业/考试·测验/话题讨论/问卷)
+let FILTER_PLAT = "all";
+let FILTER_KIND = "all";
+const filterActive = () => FILTER_PLAT !== "all" || FILTER_KIND !== "all";
 const PLAT_CLASS = { "智慧树": "plat zhs" };
 
 // 数据源小标签:一眼看出这条任务来自乐学还是智慧树
@@ -395,7 +415,7 @@ function sectionHTML(id, title, rows, opts) {
 
 function render() {
   renderFilters(DATA);
-  const d = filterData(DATA, FILTER);
+  const d = filterData(DATA, FILTER_PLAT, FILTER_KIND);
   const main = $("#main"), rail = $("#rail");
   const heroCand = (d.urgent || []).concat(d.week || [], d.later || [], d.unknown || []);
   const hero = heroCand.length ? heroCand.reduce((a, b) => (parseEnd(a.end) <= parseEnd(b.end) ? a : b)) : null;
@@ -407,6 +427,15 @@ function render() {
 
   /* 主列 */
   let html = "";
+  if (!d.item_count && filterActive()) {
+    // 只有「筛选导致空」才用筛选空态;真的没数据时仍走下面的常规空态
+    main.innerHTML = filterEmptyHTML();
+    rail.innerHTML = "";
+    rail.hidden = true;
+    document.querySelector(".grid").classList.add("single");
+    tick();
+    return;
+  }
   if (hero) {
     const end = parseEnd(hero.end);
     const urgentOthers = (d.urgent || []).filter(r => r !== hero).length;
@@ -444,53 +473,91 @@ function render() {
   tick();
 }
 
-/* ---------- 数据源筛选 ---------- */
+/* ---------- 数据源 / 类型筛选 ---------- */
 const ROW_GROUPS = ["missed", "urgent", "week", "later", "unknown", "done", "ignored"];
+// 类型按这个顺序排,未知类型排后面(数据里出现新类型也不会乱序)
+const KIND_ORDER = ["作业", "考试/测验", "话题讨论", "问卷"];
+
+const rowsOf = d => ROW_GROUPS.reduce((acc, k) => acc.concat(d[k] || []), []);
+const matchRow = (r, plat, kind) =>
+  (plat === "all" || r.platform === plat) && (kind === "all" || r.kind === kind);
 
 function platformsOf(d) {
   const seen = [];
-  for (const k of ROW_GROUPS) {
-    for (const r of d[k] || []) {
-      if (r.platform && seen.indexOf(r.platform) < 0) seen.push(r.platform);
-    }
-  }
+  for (const r of rowsOf(d)) if (r.platform && seen.indexOf(r.platform) < 0) seen.push(r.platform);
   return seen;
 }
 
-function countOf(d, plat) {
-  let n = 0;
-  for (const k of ROW_GROUPS) {
-    for (const r of d[k] || []) if (plat === "all" || r.platform === plat) n++;
-  }
-  return n;
+function kindsOf(d) {
+  const seen = [];
+  for (const r of rowsOf(d)) if (r.kind && seen.indexOf(r.kind) < 0) seen.push(r.kind);
+  const known = KIND_ORDER.filter(k => seen.indexOf(k) >= 0);
+  return known.concat(seen.filter(k => KIND_ORDER.indexOf(k) < 0));
 }
 
-// 只保留选中数据源的行;头部计数随之重算,避免“筛完还是全局数字”
-function filterData(d, plat) {
-  if (plat === "all") return d;
+// 计数口径:每组的数字反映「另一个维度当前选择」下的条数 —— 点类型时能看到
+// 各类型在当前来源下的量,点来源时能看到各来源在当前类型下的量,不会出现
+// “选了智慧树、乐学的数字却还是全局值”这种自相矛盾。
+function countRows(d, plat, kind) {
+  return rowsOf(d).filter(r => matchRow(r, plat, kind)).length;
+}
+
+function filterData(d, plat, kind) {
+  if (plat === "all" && kind === "all") return d;
   const out = { fetched_at: d.fetched_at };
-  for (const k of ROW_GROUPS) out[k] = (d[k] || []).filter(r => r.platform === plat);
+  for (const k of ROW_GROUPS) out[k] = (d[k] || []).filter(r => matchRow(r, plat, kind));
   const courses = {};
-  for (const k of ROW_GROUPS) {
-    for (const r of out[k]) courses[r.course] = 1;
-  }
+  for (const k of ROW_GROUPS) for (const r of out[k]) courses[r.course] = 1;
   out.course_count = Object.keys(courses).length;
-  out.item_count = countOf(out, "all");
+  out.item_count = countRows(d, plat, kind);
   return out;
 }
 
-// 只有一种数据源时不显示筛选(快照里还没有智慧树数据就不会多出一排无用的胶囊)
+// 某一维度只有一个取值时不渲染那一组:还没有智慧树数据、或清一色作业时,
+// 多一排「全部/作业」只是噪音。
 function renderFilters(d) {
   const box = $("#filters");
   if (!box) return;
-  const plats = platformsOf(d);
-  if (plats.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
-  if (FILTER !== "all" && plats.indexOf(FILTER) < 0) FILTER = "all";
-  const chip = (val, label) => '<button class="chip" type="button" data-plat="' + esc(val) +
-    '" aria-pressed="' + (FILTER === val) + '">' + esc(label) +
-    '<span class="n">' + countOf(d, val) + "</span></button>";
+  const plats = platformsOf(d), kinds = kindsOf(d);
+  if (FILTER_PLAT !== "all" && plats.indexOf(FILTER_PLAT) < 0) FILTER_PLAT = "all";
+  if (FILTER_KIND !== "all" && kinds.indexOf(FILTER_KIND) < 0) FILTER_KIND = "all";
+
+  const chip = (attr, val, label, on, n) =>
+    '<button class="chip' + (n === 0 && !on ? " chip-zero" : "") + '" type="button" ' + attr +
+    '="' + esc(val) + '" aria-pressed="' + on + '">'
+    + esc(label) + '<span class="n">' + n + "</span></button>";
+
+  const groups = [];
+  if (plats.length > 1) {
+    let g = '<div class="chipgroup" role="group" aria-label="按数据源筛选"><span class="chiplabel">来源</span>'
+      + chip("data-plat", "all", "全部", FILTER_PLAT === "all", countRows(d, "all", FILTER_KIND));
+    for (const p of plats)
+      g += chip("data-plat", p, p, FILTER_PLAT === p, countRows(d, p, FILTER_KIND));
+    groups.push(g + "</div>");
+  }
+  if (kinds.length > 1) {
+    let g = '<div class="chipgroup" role="group" aria-label="按任务类型筛选"><span class="chiplabel">类型</span>'
+      + chip("data-kind", "all", "全部", FILTER_KIND === "all", countRows(d, FILTER_PLAT, "all"));
+    for (const k of kinds)
+      g += chip("data-kind", k, k, FILTER_KIND === k, countRows(d, FILTER_PLAT, k));
+    groups.push(g + "</div>");
+  }
+  if (!groups.length) { box.hidden = true; box.innerHTML = ""; return; }
+
+  groups.push('<button class="chip chip-clear" type="button" data-clear-filters'
+    + (filterActive() ? "" : " hidden") + '>清除筛选</button>');
   box.hidden = false;
-  box.innerHTML = chip("all", "全部") + plats.map(p => chip(p, p)).join("");
+  box.innerHTML = groups.join("");
+}
+
+// 筛选后一条不剩时的空态:说清当前条件,并给一条退路
+function filterEmptyHTML() {
+  const cond = [FILTER_PLAT === "all" ? "" : FILTER_PLAT, FILTER_KIND === "all" ? "" : FILTER_KIND]
+    .filter(Boolean).join(" · ");
+  return '<section class="card hero"><div class="hero-top"><div>'
+    + '<div class="hero-title" style="font-size:18px">当前筛选下没有任务</div>'
+    + '<div class="hero-meta">筛选条件:' + esc(cond) + '。换个条件,或点上方「清除筛选」看全部。</div>'
+    + "</div></div></section>";
 }
 
 function fmtStamp(iso) {
@@ -546,9 +613,20 @@ function toggleDetail(btn) {
 }
 
 document.addEventListener("click", e => {
-  const chip = e.target.closest("[data-plat]");
+  const chip = e.target.closest(".chip[data-plat], .chip[data-kind]");
   if (chip) {
-    FILTER = chip.dataset.plat;
+    // 再点一次已选中的胶囊 = 取消该项筛选(回到全部)
+    if (chip.dataset.plat !== undefined) {
+      FILTER_PLAT = chip.dataset.plat === FILTER_PLAT ? "all" : chip.dataset.plat;
+    } else {
+      FILTER_KIND = chip.dataset.kind === FILTER_KIND ? "all" : chip.dataset.kind;
+    }
+    render();
+    return;
+  }
+  if (e.target.closest("[data-clear-filters]")) {
+    FILTER_PLAT = "all";
+    FILTER_KIND = "all";
     render();
     return;
   }

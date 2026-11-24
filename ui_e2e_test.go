@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -50,9 +51,15 @@ func TestIgnoreUIE2E(t *testing.T) {
 			os.Remove(dataPath)
 		}
 	})
-	if err := os.WriteFile(dataPath, []byte(`{"fetched_at":"2026-11-22T20:00:00+08:00","courses":[{"zyId":"zy1","title":"数据结构","endAt":0}],"items":[`+
-		`{"zy":"zy1","kind":"homework","id":7,"title":"作业一","end":"2026-11-23T23:59:00+08:00","sc":0,"desc":"说明文字"},`+
-		`{"zy":"zy1","kind":"homework","id":8,"title":"旧作业","end":"2026-11-18T23:59:00+08:00","sc":0,"desc":""}]}`), 0o644); err != nil {
+	// 日期必须相对“现在”生成:写死日期会让用例随日历失效(过期任务进「已过期未提交」,
+	// 而这里断言的是「3 天内截止」卡片)。
+	soon := time.Now().In(TZ).Add(6 * time.Hour).Format("2006-01-02T15:04:05-07:00")
+	old := time.Now().In(TZ).Add(-72 * time.Hour).Format("2006-01-02T15:04:05-07:00")
+	snapshot := fmt.Sprintf(`{"fetched_at":%q,"courses":[{"zyId":"zy1","title":"数据结构","endAt":0}],`+
+		`"items":[{"zy":"zy1","kind":"homework","id":7,"title":"作业一","end":%q,"sc":0,"desc":"说明文字"},`+
+		`{"zy":"zy1","kind":"homework","id":8,"title":"旧作业","end":%q,"sc":0,"desc":""}]}`,
+		time.Now().In(TZ).Format("2006-01-02T15:04:05-07:00"), soon, old)
+	if err := os.WriteFile(dataPath, []byte(snapshot), 0o644); err != nil {
 		t.Fatalf("写测试快照失败:%v", err)
 	}
 

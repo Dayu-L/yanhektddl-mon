@@ -71,8 +71,11 @@ git status --short   # 逐条确认,重点排查不该入库的文件
 前提:三处版本号已统一(见上文),且 `git status` 干净、代码已推送到 main。
 
 ```powershell
+# 0) 用 PowerShell 7(pwsh)执行,不要用 Windows PowerShell 5.1:
+#    build-installer.ps1 是无 BOM 的 UTF-8,5.1 按 ANSI 读取,会在中文字符串处
+#    报「字符串缺少终止符 / 缺少结束的 }」而编译失败(不是脚本坏了)。
 # 1) 构建(安装包 + 便携版两个资产)
-./installer/build-installer.ps1 -Version 0.4.1
+pwsh -NoProfile -ExecutionPolicy Bypass -File installer/build-installer.ps1 -Version 0.4.1
 copy-item build\yanhektddl.exe dist\yanhektddl-0.4.1.exe
 
 # 2) 写发布说明(临时 md,用完删除),面向用户可读:
