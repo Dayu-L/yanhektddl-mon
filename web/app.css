@@ -1,0 +1,119 @@
+/* ============================================================================
+   app.css —— 三个页面(dashboard / login / settings)共用
+   · reset:按元素收口,不做 `*` 全局重置
+   · base:设计令牌 + 正文排版(achromatic-ledger:近黑主操作、蓝灰台账底,
+           数据蓝只给关键数字,整屏 <1% 像素)
+   · components:卡片外壳、按钮、状态条、载入转圈
+   · page:各页自己的版式,写在页面内联 <style> 的 @layer page 里
+   构建时整份文件由 go:embed 打进 exe,经 /app.css 提供。
+   ============================================================================ */
+@layer reset, base, components, page;
+
+/* ---------------------------------------------------------------- reset */
+@layer reset {
+  :where(html, body, div, header, footer, main, aside, article, section, search,
+         h1, h2, h3, p, ul, ol, li, a, button, input, label, span, svg, img) {
+    box-sizing: border-box;
+  }
+  :where(body, h1, h2, h3, p, ul, ol) { margin: 0; padding: 0; }
+  :where(ul, ol) { list-style: none; }
+  :where(button, input) { font: inherit; color: inherit; }
+  :where(svg) { display: block; }
+  /* hidden 统一压过组件自身的 display,组件不必再逐条写 [hidden] */
+  :where([hidden]) { display: none !important; }
+  :where(html) { -webkit-text-size-adjust: 100%; }
+  :where(a) { color: inherit; }
+}
+
+/* ---------------------------------------------------------------- base */
+@layer base {
+  :root {
+    /* 面与线 */
+    --ground: #f2f4f7;        /* 台账底:低饱和蓝灰,比白低一级 */
+    --surface: #ffffff;
+    --raised: #eeeeee;
+    --border: #e6e6e6;
+    --rule: #f0f0f0;
+    --control: #d4d4d4;
+    /* 文本 */
+    --text: #0a0a0a;
+    --muted: #5f6368;
+    --faint: #6b6b6b;
+    /* 品牌与状态 */
+    --primary: #141414;       /* 唯一主操作:近黑 */
+    --data-hue: #1d5fbf;      /* 主数据专用蓝 */
+    --negative: #c4242a;
+    --negative-bg: #ffedea;
+    --negative-ink: #831c1e;
+    --positive-bg: #dcfae5;
+    --positive-ink: #04250e;
+    --info-bg: #eef4fc;
+    --info-ink: #1d3f73;
+    /* 尺度 */
+    --radius-card: 8px;
+    --radius-control: 6px;
+    --gap: 24px;
+    --pad: 24px;
+    /* 字体:Geist 由速查页按需加载,其余页面自动回落到系统 UI */
+    --font: "Geist", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+    --mono: "Geist Mono", "Consolas", "Microsoft YaHei UI", monospace;
+  }
+
+  body {
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 20px;
+    background: var(--ground);
+    color: var(--text);
+  }
+  :focus-visible { outline: 2px solid var(--data-hue); outline-offset: 2px; }
+  /* 数字:等宽 + 定宽数字,列对齐不跳动 */
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+}
+
+/* ---------------------------------------------------------------- components */
+@layer components {
+  /* 卡片外壳:半径与内边距由各页决定(速查页紧凑,登录/设置页宽松) */
+  .card { background: var(--surface); border: 1px solid var(--border); }
+
+  /* 按钮 */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px solid transparent; border-radius: var(--radius-control);
+    font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1;
+    text-decoration: none; cursor: pointer;
+  }
+  .btn-primary {
+    background: var(--primary); border-color: var(--primary); color: #fff;
+    height: 36px; padding-inline: 18px;
+  }
+  .btn-primary:hover:not(:disabled) { background: #2e2e2e; border-color: #2e2e2e; }
+  .btn-primary:active:not(:disabled) { background: #000; border-color: #000; }
+  .btn-primary:disabled { background: var(--control); border-color: var(--control); color: var(--faint); cursor: default; }
+  .btn-ghost {
+    background: var(--surface); border-color: var(--control); color: var(--text);
+    height: 32px; padding-inline: 14px; font-size: 12px;
+  }
+  .btn-ghost:hover:not(:disabled) { border-color: #9a9a9a; }
+  .btn-ghost:disabled { color: var(--faint); cursor: default; }
+  .btn-block { width: 100%; }
+  .btn-lg { height: 44px; border-radius: 8px; font-size: 15px; }
+
+  /* 状态条:默认不占位,只在 .ok/.err/.info 时出现 */
+  .status { margin-block-start: 14px; padding: 11px 14px; border-radius: 8px; font-size: 13px; line-height: 1.7; }
+  .status:is(.ok, .err, .info) { display: block; }
+  .status.ok { background: var(--positive-bg); color: var(--positive-ink); }
+  .status.err { background: var(--negative-bg); color: var(--negative-ink); }
+  .status.info { background: var(--info-bg); color: var(--info-ink); }
+
+  /* 载入转圈:轨道取当前文字色的 30%,在深/浅背景上都自洽 */
+  .spinner {
+    display: inline-block; width: 10px; height: 10px; margin-inline-end: 6px;
+    border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-top-color: currentColor; border-radius: 50%;
+    animation: spin .8s linear infinite; vertical-align: -1px;
+  }
+  .spinner-lg { width: 12px; height: 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+}

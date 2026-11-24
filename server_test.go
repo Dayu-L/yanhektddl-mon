@@ -124,3 +124,41 @@ func TestRenderPageIgnoreContract(t *testing.T) {
 		t.Fatalf("渲染数据不应再包含 closes")
 	}
 }
+
+// 共用样式表:三页都必须引用 /app.css,服务端也必须能给出它,
+// 否则打包漏掉样式时页面会静默降级成无样式(而不是报错)。
+func TestSharedStylesheet(t *testing.T) {
+	pages := map[string]string{
+		"dashboard.html": dashboardHTML,
+		"login.html":     loginHTML,
+		"settings.html":  settingsHTML,
+	}
+	for name, page := range pages {
+		if !strings.Contains(page, `<link rel="stylesheet" href="/app.css">`) {
+			t.Fatalf("%s 应引用共用样式表 /app.css", name)
+		}
+	}
+	if !strings.Contains(appCSS, "@layer reset, base, components, page;") {
+		t.Fatalf("app.css 应显式声明层顺序")
+	}
+
+	srv := httptest.NewServer(newMux(portFirst))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/app.css")
+	if err != nil {
+		t.Fatalf("GET /app.css 失败:%v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("/app.css 应返回 200,实际 %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/css") {
+		t.Fatalf("/app.css 的 Content-Type 应为 text/css,实际 %q", ct)
+	}
+	for _, want := range []string{"--data-hue", ".btn-primary", ".spinner", "[hidden]"} {
+		if !strings.Contains(appCSS, want) {
+			t.Fatalf("app.css 应包含共用定义 %q", want)
+		}
+	}
+}

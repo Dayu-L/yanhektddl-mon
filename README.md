@@ -199,7 +199,7 @@ yanhektddl-mon/
 ├─ platform_windows.go     # Win32 适配层:控制台/DPI/单实例/窗口(纯 syscall,无 CGO)
 ├─ platform_other.go       # 非 Windows 占位实现
 ├─ assets/                 # app.ico(托盘与 exe 图标)、app.png
-├─ web/                    # dashboard.html(速查页)、login.html、settings.html
+├─ web/                    # dashboard.html(速查页)、login.html、settings.html、app.css(共用样式)
 ├─ installer/              # installer.iss、中文语言包、build-installer.ps1
 ├─ scripts/                # 创建桌面快捷方式.bat、卸载.bat(便携版)
 ├─ tools/                  # make_icon.py(生成应用图标)

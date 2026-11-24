@@ -6,264 +6,197 @@
 <title>延河课堂 DDL</title>
 <link rel="icon" type="image/png" sizes="256x256" href="/icon256.png">
 <link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="/app.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-/* ============ achromatic-ledger · tokens ============ */
-:root {
-  --ground: #f2f4f7;          /* face: 蓝灰台账底,低饱和,比白色低一级 */
-  --surface: #ffffff;
-  --raised: #eeeeee;
-  --border: #e6e6e6;
-  --rule: #f0f0f0;
-  --control: #d4d4d4;
-  --text: #0a0a0a;
-  --muted: #5f6368;
-  --faint: #6b6b6b;
-  --primary: #141414;          /* 唯一主操作:近黑 */
-  --data-hue: #1d5fbf;         /* 主数据专用蓝,整屏 <1% 像素 */
-  --negative: #c4242a;
-  --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
-  --pill-neutral-bg: #eeeeee;  --pill-neutral-ink: #3d3d3d;
-  --radius-card: 8px;
-  --radius-control: 6px;
-  --gap: 24px;
-  --pad: 24px;
-  --font: "Geist", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-  --mono: "Geist Mono", "Consolas", "Microsoft YaHei UI", monospace;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; }
-body {
-  font-family: var(--font);
-  background: var(--ground);
-  color: var(--text);
-  font-size: 14px;
-  line-height: 20px;
-}
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-a { color: inherit; }
+@layer page {
+  .page { max-width: 1148px; margin-inline: auto; padding-inline: 24px; }
 
-.page { max-width: 1148px; margin: 0 auto; padding: 0 24px; }
+  /* ============ 标题行 ============ */
+  .titlebar {
+    display: flex; align-items: flex-start; gap: 14px; padding-block-start: 36px;
+    & .mark { flex: none; margin-block-start: 3px; }
+    & .heading { min-width: 0; }
+    & h1 { font-size: 24px; font-weight: 600; line-height: 30px; letter-spacing: -0.01em; }
+  }
+  .finding {
+    max-width: 62ch; margin-block-start: 4px; color: var(--muted);
+    &:empty { display: none; }
+  }
+  .stampbox {
+    display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap;
+    gap: 8px; margin-inline-start: auto; padding-block-start: 2px;
+  }
+  .stamp { color: var(--muted); font-size: 12px; margin-inline-end: 2px; }
+  .stamp .num { color: var(--text); }
 
-/* ============ 标题行 ============ */
-.titlebar {
-  display: flex; align-items: flex-start; gap: 14px;
-  padding: 36px 0 0;
-}
-.mark { flex: none; margin-top: 3px; }
-.titlebar h1 {
-  font-size: 24px; font-weight: 600; line-height: 30px; letter-spacing: -0.01em;
-}
-.finding { color: var(--muted); margin-top: 4px; max-width: 62ch; }
-.finding:empty { display: none; }
-.stampbox { margin-left: auto; text-align: right; flex: none; padding-top: 4px; }
-.stamp { color: var(--muted); font-size: 12px; }
-.stamp .num { color: var(--text); }
+  /* ============ 数据源标签 / 筛选 ============ */
+  .plat {
+    display: inline-block; margin-inline-end: 6px; padding-inline: 6px;
+    border-radius: 6px; font-size: 11px; line-height: 16px; vertical-align: 1px;
+    background: #eef3fb; color: #3a5f9e;
+    &.zhs { background: #eaf6ee; color: #2f7a4d; }
+  }
+  .filterbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px;
+    margin-block-end: var(--gap);
+  }
+  .chipgroup { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .chiplabel { color: var(--muted); font-size: 12px; margin-inline-end: 2px; }
+  .chip {
+    border: 1px solid var(--control); border-radius: 999px; background: transparent;
+    padding: 4px 12px; color: var(--muted);
+    font-family: inherit; font-size: 12px; line-height: 18px; cursor: pointer;
+    transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+    & .n { margin-inline-start: 4px; opacity: .65; }
+    &:hover { border-color: var(--text); color: var(--text); }
+    &:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+    &[aria-pressed="true"] {
+      background: var(--text); border-color: var(--text); color: #fff;
+      & .n { opacity: .8; }
+    }
+  }
+  .chip-clear { border-style: dashed; }
+  .chip-zero { opacity: .5; &:hover { opacity: .8; } }
 
-/* ============ 数据源/类型标签与筛选 ============ */
-.plat {
-  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 6px;
-  font-size: 11px; line-height: 16px; vertical-align: 1px;
-  background: #eef3fb; color: #3a5f9e;
-}
-.plat.zhs { background: #eaf6ee; color: #2f7a4d; }
+  /* ============ 登录失效横幅 ============ */
+  .relogin {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    margin-block-end: var(--gap); padding: 10px 14px;
+    background: var(--negative-bg); color: var(--negative-ink);
+    border: 1px solid #f2c8c4; border-radius: var(--radius-control);
+    font-size: 13px;
+    & a { color: inherit; font-weight: 600; text-decoration: underline; }
+  }
 
-.filterbar {
-  display: flex; flex-wrap: wrap; align-items: center;
-  gap: 6px 20px; margin: 0 0 var(--gap);
-}
-.filterbar[hidden] { display: none; }
-.chipgroup { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.chiplabel { color: var(--muted); font-size: 12px; margin-right: 2px; }
-.chip {
-  border: 1px solid var(--control); background: transparent; color: var(--muted);
-  border-radius: 999px; padding: 4px 12px; font-size: 12px; line-height: 18px;
-  font-family: inherit; cursor: pointer;
-  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
-}
-.chip:hover { border-color: var(--text); color: var(--text); }
-.chip:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-.chip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
-.chip .n { opacity: .65; margin-left: 4px; }
-.chip[aria-pressed="true"] .n { opacity: .8; }
-.chip-clear { border-style: dashed; }
-.chip-clear[hidden] { display: none; }
-.chip-zero { opacity: .5; }
-.chip-zero:hover { opacity: .8; }
-@media (max-width: 640px) {
-  .filterbar { gap: 6px 12px; }
-  .chip { padding: 3px 10px; }
-}
+  /* ============ 栅格:732 + 24 + 344 = 1100 ============ */
+  .grid {
+    display: grid; grid-template-columns: 1fr; gap: var(--gap); align-items: start;
+    margin-block-start: var(--gap);
+    @media (width >= 1121px) {
+      grid-template-columns: 732px 344px;
+      /* 右轨无卡片(已完成/已忽略皆空)时收成居中单列,不留空列 */
+      &:not(:has(> .col-rail:not([hidden]))) {
+        grid-template-columns: minmax(0, 860px); justify-content: center;
+      }
+    }
+  }
+  .col-main, .col-rail { display: grid; gap: var(--gap); min-width: 0; }
 
-/* ============ 登录失效横幅 ============ */
-.relogin {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  margin: 0 0 var(--gap); padding: 10px 14px;
-  background: var(--pill-negative-bg); color: var(--pill-negative-ink);
-  border: 1px solid #f2c8c4; border-radius: var(--radius-control);
-  font-size: 13px;
-}
-.relogin[hidden] { display: none; }
-.relogin a { color: inherit; font-weight: 600; text-decoration: underline; }
+  /* ============ 卡片 ============ */
+  .card { border-radius: var(--radius-card); padding: 20px; }
+  .cardhead {
+    display: flex; align-items: baseline; gap: 8px; margin-block-end: 4px;
+    & .dot {
+      flex: none; align-self: center; width: 6px; height: 6px;
+      border-radius: 50%; background: var(--negative);
+    }
+    & h2 { font-size: 16px; font-weight: 600; line-height: 24px; }
+    & .count { color: var(--muted); font-size: 12px; }
+    & .toggle {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-inline-start: auto; padding: 3px 4px;
+      background: none; border: none; color: var(--muted);
+      font-size: 12px; cursor: pointer;
+      &:hover { color: var(--text); text-decoration: underline; }
+    }
+  }
 
-/* ============ 控件 ============ */
-button { font: inherit; }
-.btn-primary {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--primary); color: #fff;
-  height: 36px; padding: 0 18px; border: none;
-  border-radius: var(--radius-control); cursor: pointer;
-  font-size: 14px; font-weight: 500; text-decoration: none;
-}
-.btn-primary:hover { background: #2e2e2e; }
-.btn-primary:active { background: #000; }
-.btn-ghost {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: var(--surface); color: var(--text);
-  height: 32px; padding: 0 14px; margin-top: 6px;
-  border: 1px solid var(--control); border-radius: var(--radius-control);
-  cursor: pointer; font-size: 12px; text-decoration: none;
-  margin-left: 6px;
-}
-.btn-ghost:hover { border-color: #9a9a9a; }
-.btn-ghost:disabled { color: var(--faint); cursor: default; }
-.btn-ghost:disabled:hover { border-color: var(--control); }
-:focus-visible { outline: 2px solid var(--data-hue); outline-offset: 2px; }
+  /* ============ 主卡:最近截止(屏幕的回答) ============ */
+  .hero {
+    padding: var(--pad);
+    & .hero-top { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 20px; }
+    & .hero-count {
+      font-family: var(--mono); font-size: 36px; font-weight: 700;
+      line-height: 40px; letter-spacing: -0.02em;
+      color: var(--data-hue); white-space: nowrap;
+    }
+    & .hero-task { flex: 1; min-width: 0; }
+    & .hero-meta { margin-block-start: 3px; color: var(--muted); font-size: 12px; }
+    & .hero-note {
+      margin-block-start: 16px; color: var(--muted); font-size: 12px;
+      & a { color: var(--text); }
+    }
+  }
+  .hero-title {
+    display: inline-block; max-width: 100%; vertical-align: bottom;
+    font-size: 18px; font-weight: 500; line-height: 26px; text-decoration: none;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    &:hover { text-decoration: underline; }
+  }
+  /* 空态/筛选空态的主标题:与 hero-title 同字号,但不是链接 */
+  .hero-headline { font-size: 18px; font-weight: 500; line-height: 26px; }
 
-/* ============ 栅格:732 + 24 + 344 = 1100 ============ */
-.grid {
-  display: grid; grid-template-columns: 732px 344px;
-  gap: var(--gap); align-items: start;
-  margin-top: var(--gap);
-}
-/* 右轨无卡片(已完成/已忽略皆空)时收成居中单列,不留空列 */
-.grid.single { grid-template-columns: minmax(0, 860px); justify-content: center; }
-.col-main, .col-rail { display: grid; gap: var(--gap); min-width: 0; }
+  /* ============ 任务行 ============ */
+  .rows { display: block; }
+  .row {
+    display: grid; grid-template-columns: 1fr 122px 104px; gap: 16px; align-items: center;
+    /* 水平内边距 + 等量负外边距:文字仍与卡片边缘对齐,
+       hover 描边与文字之间留出空隙,不压首字 */
+    padding: 11px 10px; margin-inline: -10px;
+    border-block-start: 1px solid var(--rule); border-radius: 6px;
+    cursor: pointer;
+    &:hover { outline: 1px solid var(--control); }
+    & .r-main { min-width: 0; }
+  }
+  .rows > .r-item:first-child > .row { border-block-start: none; padding-block-start: 12px; }
+  .r-title {
+    display: block; max-width: 100%;
+    font-size: 14px; font-weight: 500; line-height: 20px; text-decoration: none;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    &:hover { text-decoration: underline; }
+  }
+  .r-sub {
+    margin-block-start: 2px; color: var(--muted); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .r-when { text-align: right; }
+  .r-date { font-size: 13px; }
+  .r-left { margin-block-start: 1px; color: var(--muted); font-size: 12px; }
+  .r-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  /* 图标按钮:行内动作(详情/打开/忽略)统一 28px 命中区 */
+  .iconbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; width: 28px; height: 28px;
+    background: none; border: none; border-radius: 6px;
+    color: var(--muted); cursor: pointer; text-decoration: none;
+    &:hover { background: var(--raised); color: var(--text); }
+    &:focus-visible { outline-offset: 0; }
+  }
+  .r-detail {
+    margin: 2px -10px 12px; padding: 12px 14px;
+    background: #f4f5f7; border-radius: 8px;
+    font-size: 13px; line-height: 1.7; color: var(--text);
+  }
+  /* 弱化行(已完成/已忽略):标题降级 */
+  .muted-rows .r-title { color: var(--muted); font-weight: 400; }
+  /* 右轨行:标题优先,单个动作位(已忽略→恢复;已完成→无动作) */
+  .col-rail .row { grid-template-columns: 1fr 92px 28px; gap: 8px; }
+  .col-rail .r-date { font-size: 12px; }
 
-/* ============ 卡片 ============ */
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: 20px;
-}
-.cardhead {
-  display: flex; align-items: baseline; gap: 8px;
-  margin-bottom: 4px;
-}
-.cardhead .dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--negative); align-self: center; flex: none;
-}
-.cardhead h2 { font-size: 16px; font-weight: 600; line-height: 24px; }
-.cardhead .count { color: var(--muted); font-size: 12px; }
-.cardhead .toggle {
-  margin-left: auto; font-size: 12px; color: var(--muted);
-  display: inline-flex; align-items: center; gap: 4px;
-  background: none; border: none; cursor: pointer; padding: 3px 4px;
-}
-.cardhead .toggle:hover { color: var(--text); text-decoration: underline; }
+  /* ============ 页脚 ============ */
+  .foot { padding: 40px 0 24px; color: var(--faint); font-size: 12px; text-align: center; }
 
-/* ============ 主卡:最近截止(屏幕的回答) ============ */
-.hero { padding: var(--pad); }
-.hero-top { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
-.hero-count {
-  font-family: var(--mono); font-weight: 700;
-  font-size: 36px; line-height: 40px; letter-spacing: -0.02em;
-  color: var(--data-hue); white-space: nowrap;
-}
-.hero-task { min-width: 0; flex: 1; }
-.hero-title {
-  font-size: 18px; font-weight: 500; line-height: 26px;
-  text-decoration: none; display: inline-block; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
-}
-.hero-title:hover { text-decoration: underline; }
-.hero-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
-.hero-note { color: var(--muted); font-size: 12px; margin-top: 16px; }
-.hero-note a { color: var(--text); }
-
-/* ============ 任务行 ============ */
-.rows { display: block; }
-.row {
-  display: grid; grid-template-columns: 1fr 122px 104px;
-  gap: 16px; align-items: center;
-  /* 水平内边距 + 等量负外边距:文字仍与卡片边缘对齐,
-     hover 描边与文字之间留出空隙,不压首字 */
-  padding: 11px 10px; margin: 0 -10px;
-  border-top: 1px solid var(--rule);
-  cursor: pointer; border-radius: 6px;
-}
-.rows .row:first-child { border-top: none; padding-top: 12px; }
-.row:hover { outline: 1px solid var(--control); outline-offset: 0; }
-.r-title {
-  font-size: 14px; font-weight: 500; line-height: 20px;
-  text-decoration: none; display: block; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.r-title:hover { text-decoration: underline; }
-.r-sub { color: var(--muted); font-size: 12px; margin-top: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.r-when { text-align: right; }
-.r-date { font-size: 13px; }
-.r-left { color: var(--muted); font-size: 12px; margin-top: 1px; }
-.r-actions { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
-/* 图标按钮:行内动作(详情/打开/忽略)统一 28px 命中区 */
-.iconbtn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; flex: none;
-  background: none; border: none; border-radius: 6px;
-  color: var(--muted); cursor: pointer; text-decoration: none;
-}
-.iconbtn:hover { background: var(--raised); color: var(--text); }
-.iconbtn:focus-visible { outline-offset: 0; }
-.r-detail {
-  background: #f4f5f7; border-radius: 8px;
-  padding: 12px 14px; margin: 2px -10px 12px;
-  font-size: 13px; line-height: 1.7; color: var(--text);
-}
-.r-detail + .row { border-top: none; }
-/* 弱化行(已完成/已忽略):标题降级 */
-.muted-rows .r-title { color: var(--muted); font-weight: 400; }
-/* 右轨行:标题优先,单个动作位(已忽略→恢复;已完成→无动作) */
-.col-rail .row { grid-template-columns: 1fr 92px 28px; gap: 8px; }
-.col-rail .r-date { font-size: 12px; }
-
-/* ============ 页脚 ============ */
-.foot {
-  color: var(--faint); font-size: 12px; text-align: center;
-  padding: 40px 0 24px;
-}
-
-/* ============ 抓取中状态 ============ */
-.spin {
-  display: inline-block; width: 10px; height: 10px;
-  border: 2px solid var(--control); border-top-color: var(--text);
-  border-radius: 50%; animation: rot 0.8s linear infinite;
-  vertical-align: -1px; margin-right: 6px;
-}
-@keyframes rot { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
-
-/* ============ 电话 ============ */
-@media (max-width: 1120px) {
-  .grid { grid-template-columns: 1fr; }
-}
-@media (max-width: 640px) {
-  .page { padding: 0 16px; }
-  .titlebar { flex-wrap: wrap; padding-top: 24px; }
-  .stampbox { margin-left: 0; width: 100%; text-align: left; }
-  .stampbox { display: flex; align-items: baseline; gap: 12px; }
-  .hero { padding: 16px; }
-  .hero-top { align-items: flex-start; }
-  .hero-count { font-size: 28px; line-height: 32px; }
-  .btn-primary { width: 100%; margin-top: 14px; justify-content: center; }
-  /* 行点击即跳转,打开按钮隐藏;只留详情 + 忽略两个图标 */
-  .row { grid-template-columns: 1fr 104px 64px; }
-  .r-open { display: none; }
-  .card { padding: 16px; }
+  /* ============ 电话 ============ */
+  @media (width <= 640px) {
+    .page { padding-inline: 16px; }
+    .titlebar { flex-wrap: wrap; padding-block-start: 24px; }
+    .stampbox { width: 100%; margin-inline-start: 0; justify-content: flex-start; }
+    .filterbar { gap: 6px 12px; }
+    .chip { padding: 3px 10px; }
+    .hero {
+      padding: 16px;
+      & .hero-top { align-items: flex-start; }
+      & .hero-count { font-size: 28px; line-height: 32px; }
+      & .btn-primary { width: 100%; margin-block-start: 14px; }
+    }
+    /* 行点击即跳转,打开按钮隐藏;只留详情 + 忽略两个图标 */
+    .row { grid-template-columns: 1fr 104px 64px; }
+    .r-open { display: none; }
+    .card { padding: 16px; }
+  }
 }
 </style>
 </head>
@@ -275,15 +208,15 @@ button { font: inherit; }
       <circle cx="13" cy="13" r="8" fill="none" stroke="#1d5fbf" stroke-width="1.8"/>
       <path d="M13 8.2 V13 L16.4 15.2" fill="none" stroke="#1d5fbf" stroke-width="1.8" stroke-linecap="round"/>
     </svg>
-    <div style="min-width:0">
+    <div class="heading">
       <h1>延河课堂 DDL</h1>
-      <p class="finding" id="finding">正在加载数据…</p>
+      <p class="finding" id="finding" role="status">正在加载数据…</p>
     </div>
     <div class="stampbox">
       <span class="stamp">数据截至 <span class="num" id="stampTime">—</span></span>
-      <a class="btn-ghost" href="/settings" title="自动巡检与关闭窗口行为">
+      <a class="btn btn-ghost" href="/settings" title="自动巡检与关闭窗口行为">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>设置</a>
-      <button class="btn-ghost" id="refreshBtn" type="button">
+      <button class="btn btn-ghost" id="refreshBtn" type="button">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>刷新数据</button>
     </div>
   </header>
@@ -293,7 +226,7 @@ button { font: inherit; }
     <a href="/login?from=banner">重新登录 →</a>
   </div>
 
-  <div class="filterbar" id="filters" hidden></div>
+  <search class="filterbar" id="filters" hidden></search>
 
   <div class="grid">
     <main class="col-main" id="main"></main>
@@ -378,8 +311,10 @@ function rowHTML(r, opts) {
       + '<a class="iconbtn r-open" href="' + esc(r.url) + '" target="_blank" rel="noopener" aria-label="在新标签页打开任务" title="打开任务页面">' + icon("ext", 14) + "</a>"
       + '<button class="iconbtn" type="button" data-ignore="' + esc(r.key) + '" aria-label="忽略此任务" title="忽略:不再提醒与统计">' + icon("eyeOff", 14) + "</button>";
   }
-  let html = '<div class="row" data-url="' + esc(r.url) + '" role="link" tabindex="0">'
-    + '<div style="min-width:0">'
+  // 行本身不是交互控件:标题链接负责键盘/读屏路径,整行只是鼠标捷径
+  // (链接里再套按钮属于嵌套交互元素,role="link" + tabindex 会踩这条红线)
+  let html = '<li class="r-item"><div class="row" data-url="' + esc(r.url) + '">'
+    + '<div class="r-main">'
     + '<a class="r-title" href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.title) + '</a>'
     + '<div class="r-sub">' + platTag(r) + esc(r.course) + " · " + esc(r.kind) + (r.no_need ? " · 无需提交" : "") + '</div>'
     + '</div>'
@@ -392,7 +327,7 @@ function rowHTML(r, opts) {
       .replace(/\n/g, "<br>");
     html += '<div class="r-detail" hidden>' + body + "</div>";
   }
-  return html;
+  return html + "</li>";
 }
 
 function sectionHTML(id, title, rows, opts) {
@@ -407,9 +342,9 @@ function sectionHTML(id, title, rows, opts) {
     + "<h2>" + esc(title) + '</h2><span class="count">' + rows.length + " 项</span>"
     + (hidden > 0 ? '<button class="toggle" type="button" data-more="' + key + '" data-target="' + id + '">' + icon("chevrons", 12) + "展开全部</button>" : "")
     + "</div>";
-  html += '<div class="rows' + (opts.rowClass ? " " + opts.rowClass : "") + '">';
+  html += '<ul class="rows' + (opts.rowClass ? " " + opts.rowClass : "") + '">';
   for (const r of shown) html += rowHTML(r, opts);
-  html += "</div></section>";
+  html += "</ul></section>";
   return html;
 }
 
@@ -432,7 +367,6 @@ function render() {
     main.innerHTML = filterEmptyHTML();
     rail.innerHTML = "";
     rail.hidden = true;
-    document.querySelector(".grid").classList.add("single");
     tick();
     return;
   }
@@ -445,13 +379,13 @@ function render() {
       + '<a class="hero-title" href="' + esc(hero.url) + '" target="_blank" rel="noopener">' + esc(hero.title) + "</a>"
       + '<div class="hero-meta">' + platTag(hero) + esc(hero.course) + " · " + esc(hero.kind) + " · 截止 " + fmtDate(end) + "</div>"
       + "</div>"
-      + '<a class="btn-primary" href="' + esc(hero.url) + '" target="_blank" rel="noopener">去完成 ' + icon("arrow", 15) + "</a>"
+      + '<a class="btn btn-primary" href="' + esc(hero.url) + '" target="_blank" rel="noopener">去完成 ' + icon("arrow", 15) + "</a>"
       + "</div>";
     if (urgentOthers > 0) html += '<div class="hero-note">另有 ' + urgentOthers + ' 项也在 3 天内截止,见下方列表</div>';
     html += "</section>";
   } else {
     html += '<section class="card hero"><div class="hero-top">'
-      + '<div><div class="hero-title" style="font-size:18px">全部任务已完成</div>'
+      + '<div><div class="hero-headline">全部任务已完成</div>'
       + '<div class="hero-meta">下次巡检发现新任务会自动出现在这里</div></div></div></section>';
   }
   html += sectionHTML("missed", "已过期未提交", d.missed || [], { dot: true });
@@ -468,7 +402,6 @@ function render() {
   rh += sectionHTML("donelist", "已完成", d.done || [], { rowClass: "muted-rows", mode: "done", cap: 6, key: "done" });
   rail.innerHTML = rh;
   rail.hidden = !rh;
-  document.querySelector(".grid").classList.toggle("single", !rh);
 
   tick();
 }
@@ -555,7 +488,7 @@ function filterEmptyHTML() {
   const cond = [FILTER_PLAT === "all" ? "" : FILTER_PLAT, FILTER_KIND === "all" ? "" : FILTER_KIND]
     .filter(Boolean).join(" · ");
   return '<section class="card hero"><div class="hero-top"><div>'
-    + '<div class="hero-title" style="font-size:18px">当前筛选下没有任务</div>'
+    + '<div class="hero-headline">当前筛选下没有任务</div>'
     + '<div class="hero-meta">筛选条件:' + esc(cond) + '。换个条件,或点上方「清除筛选」看全部。</div>'
     + "</div></div></section>";
 }
@@ -642,11 +575,6 @@ document.addEventListener("click", e => {
   if (row && !e.target.closest("a") && !e.target.closest("button"))
     window.open(row.dataset.url, "_blank", "noopener");
 });
-document.addEventListener("keydown", e => {
-  if (e.key === "Enter" && e.target.classList && e.target.classList.contains("row"))
-    window.open(e.target.dataset.url, "_blank", "noopener");
-});
-
 /* ---------- 刷新 ---------- */
 async function load() {
   try {
@@ -664,7 +592,7 @@ const refreshBtn = $("#refreshBtn");
 const refreshLabel = refreshBtn.innerHTML; // 含刷新图标
 refreshBtn.addEventListener("click", async () => {
   refreshBtn.disabled = true;
-  refreshBtn.innerHTML = '<span class="spin" aria-hidden="true"></span>抓取中…';
+  refreshBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>抓取中…';
   $("#stampTime").textContent = "抓取中…";
   try {
     await fetch("/api/refresh", { method: "POST" });

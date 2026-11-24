@@ -18,6 +18,11 @@ var faviconIco []byte
 //go:embed assets/app.png
 var faviconPNG []byte
 
+// app.css 打入 exe:三页共用的 reset / 设计令牌 / 共用控件
+//
+//go:embed web/app.css
+var appCSS string
+
 // ---------------------------------------------------------------- 速查页数据
 // 把 ddl_data.json 变成 dashboard.html 使用的 JSON(对应 python snapshot())
 
@@ -208,6 +213,11 @@ func newMux(port int) http.Handler {
 		w.Header().Set("Content-Type", "image/x-icon")
 		w.Header().Set("Cache-Control", "max-age=86400")
 		w.Write(faviconIco)
+	})
+	mux.HandleFunc("/app.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store") // 与页面同寿:升级 exe 后立刻生效
+		w.Write([]byte(appCSS))
 	})
 	// 256px PNG 图标:同时供 <link rel=icon sizes=256> 使用。
 	// Edge --app 窗口的任务栏按钮图标取自站点 favicon,声明大尺寸 PNG

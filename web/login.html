@@ -6,72 +6,51 @@
 <title>登录乐学 · 延河课堂 DDL</title>
 <link rel="icon" type="image/png" sizes="256x256" href="/icon256.png">
 <link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="/app.css">
 <style>
-  :root {
-    --ground: #f2f4f7; --surface: #ffffff; --border: #e6e6e6;
-    --text: #0a0a0a; --muted: #5f6368; --faint: #6b6b6b;
-    --blue: #1d5fbf; --primary: #141414;
-    --ok-bg: #dcfae5; --ok-ink: #04250e;
-    --err-bg: #ffedea; --err-ink: #831c1e;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
+@layer page {
+  /* 单卡片居中:列宽由网格轨道限定,卡片按可用宽度收缩;
+     矮窗口时按 safe 对齐,卡片顶部不会被裁掉 */
   body {
-    font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
-    background: var(--ground); color: var(--text);
-    display: flex; align-items: center; justify-content: center;
-    padding: 24px;
+    display: grid; grid-template-columns: minmax(0, 560px); justify-content: center;
+    align-content: safe center; min-height: 100dvh; padding: 24px;
   }
-  .card {
-    width: 560px; max-width: 100%;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; padding: 36px 40px;
+  .card { width: 100%; border-radius: 12px; padding: 36px 40px; }
+
+  .brand {
+    display: flex; align-items: center; gap: 12px; margin-block-end: 26px;
+    & img { width: 34px; height: 34px; }
+    & .name { font-size: 17px; font-weight: 700; }
+    & .accent { color: var(--data-hue); }
   }
-  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
-  .brand img { width: 34px; height: 34px; }
-  .brand .name { font-size: 17px; font-weight: 700; }
+
   h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); font-size: 14px; line-height: 1.7; margin-top: 8px; }
-  .steps { margin-top: 24px; display: grid; gap: 12px; }
-  .step { display: flex; gap: 12px; align-items: flex-start; }
-  .no {
-    flex: none; width: 26px; height: 26px; border-radius: 50%;
-    border: 1px solid #d0d6de; color: var(--muted);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 600;
+  .sub { margin-block-start: 8px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+
+  .steps { display: grid; gap: 12px; margin-block-start: 24px; }
+  .step {
+    display: flex; align-items: flex-start; gap: 12px;
+    & .no {
+      flex: none; display: flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px;
+      border: 1px solid #d0d6de; border-radius: 50%;
+      color: var(--muted); font-size: 12px; font-weight: 600;
+    }
+    & .t1 { font-size: 14px; font-weight: 600; line-height: 26px; }
+    & .t2 { margin-block-start: 1px; color: var(--muted); font-size: 12px; }
   }
-  .step .t1 { font-size: 14px; font-weight: 600; line-height: 26px; }
-  .step .t2 { font-size: 12px; color: var(--muted); margin-top: 1px; }
-  .btn {
-    margin-top: 28px; width: 100%; height: 44px;
-    background: var(--primary); color: #fff; border: none;
-    border-radius: 8px; font-size: 15px; font-weight: 600;
-    cursor: pointer; font-family: inherit;
-  }
-  .btn:hover { background: #2e2e2e; }
-  .btn:disabled { background: #9aa1aa; cursor: default; }
-  .status {
-    margin-top: 18px; font-size: 13px; line-height: 1.7;
-    padding: 12px 14px; border-radius: 8px; display: none;
-  }
-  .status.info { display: block; background: #eef4fc; color: #1d3f73; }
-  .status.ok { display: block; background: var(--ok-bg); color: var(--ok-ink); }
-  .status.err { display: block; background: var(--err-bg); color: var(--err-ink); }
-  .spinner {
-    display: inline-block; width: 12px; height: 12px; margin-right: 8px;
-    border: 2px solid #b9cdec; border-top-color: var(--blue);
-    border-radius: 50%; animation: rot .8s linear infinite;
-    vertical-align: -1px;
-  }
-  @keyframes rot { to { transform: rotate(360deg); } }
-  .foot { margin-top: 22px; font-size: 12px; color: var(--faint); }
+
+  .steps + .btn { margin-block-start: 28px; }
+
+  .foot { margin-block-start: 22px; color: var(--faint); font-size: 12px; }
+}
 </style>
 </head>
 <body>
 <div class="card">
   <div class="brand">
     <img src="/favicon.ico" alt="">
-    <div class="name">延河课堂 <span style="color:#1d5fbf">DDL</span></div>
+    <div class="name">延河课堂 <span class="accent">DDL</span></div>
   </div>
 
   <h1>登录乐学账号</h1>
@@ -85,8 +64,8 @@
     <div class="step"><div class="no">5</div><div><div class="t1">不用做别的,等它自动完成</div><div class="t2">登录成功后自动抓取课程与作业,通常不到一分钟</div></div></div>
   </div>
 
-  <button class="btn" id="start">开始登录</button>
-  <div class="status" id="status"></div>
+  <button class="btn btn-primary btn-block btn-lg" id="start" type="button">开始登录</button>
+  <div class="status" id="status" role="status"></div>
 
   <div class="foot">会话保存在本机;账号密码只输入到学校平台的登录页,本程序不会收集。</div>
 </div>
@@ -118,7 +97,7 @@ btn.addEventListener("click", startLogin);
 async function startLogin() {
   btn.disabled = true;
   btn.textContent = "正在打开浏览器…";
-  setStatus('<span class="spinner"></span>正在启动登录窗口,请稍候…', "info");
+  setStatus('<span class="spinner spinner-lg"></span>正在启动登录窗口,请稍候…', "info");
   try {
     await fetch("/api/login", { method: "POST" });
   } catch (e) {
@@ -137,7 +116,7 @@ function poll() {
     } catch (e) { return; }
     if (st.running) {
       btn.textContent = "等待登录完成…";
-      setStatus('<span class="spinner"></span>正在等待登录 —— 请在弹出的 Edge 窗口里完成统一身份认证(扫码或短信均可)。', "info");
+      setStatus('<span class="spinner spinner-lg"></span>正在等待登录 —— 请在弹出的 Edge 窗口里完成统一身份认证(扫码或短信均可)。', "info");
       return;
     }
     clearInterval(timer);

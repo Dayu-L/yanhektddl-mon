@@ -18,7 +18,7 @@ yanhektddl-mon/
 ├─ tray.go / login.go    # 系统托盘、首次登录向导
 ├─ platform_windows.go   # Win32 适配:控制台/DPI/单实例/窗口(纯 syscall,禁止引入 CGO)
 ├─ platform_other.go     # 非 Windows 占位
-├─ web/                  # dashboard.html / login.html(构建时嵌入 exe)
+├─ web/                  # dashboard.html / login.html / settings.html / app.css(三页共用样式,构建时嵌入 exe)
 ├─ assets/               # app.ico(托盘与 exe 图标)
 ├─ installer/            # installer.iss + build-installer.ps1(输出 dist/ 安装包)
 ├─ scripts/              # 便携版 bat(GBK 编码!勿转 UTF-8)
