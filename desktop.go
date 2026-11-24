@@ -36,8 +36,21 @@ var (
 // openWindow 显示速查窗口:已打开则切到前台,没打开才新建。
 // (系统没装 Edge 时退回默认浏览器)
 func openWindow(port int) {
+	openWindowTo(port, true)
+}
+
+// openWindowFresh 总是新建一个窗口,不把同名旧窗口前置。
+//
+// 用于启动时服务已换端口(8765 被别的程序占用)的场景:此时屏幕上那个
+// 同名窗口指向的是别人的页面(典型是旧 Python 版的速查页,没有设置页),
+// 把它前置等于让用户继续看错的页面。
+func openWindowFresh(port int) {
+	openWindowTo(port, false)
+}
+
+func openWindowTo(port int, focusExisting bool) {
 	// 已有窗口:幂等前置,无需防抖
-	if focusExistingAppWindow(dashboardTitles...) {
+	if focusExisting && focusExistingAppWindow(dashboardTitles...) {
 		logger.Printf(">> 速查窗口已存在,已切换到前台")
 		applyWindowIconSoon(dashboardTitles...)
 		return
@@ -103,18 +116,41 @@ func shutdownAndExit() {
 	os.Exit(0)
 }
 
+// appMarker 写进 /api/status 的身份标记。
+//
+// 旧 Python 版(legacy_python/ddl_server.py)同样在 8765 上实现 /api/status,
+// 返回的是 {"running":false}。只凭 running 字段判“是我们自己”会把旧版认成新版,
+// 于是新 exe 不开服务、直接把窗口指过去——用户看到的是没有设置页的旧速查页。
+const appMarker = "yanhektddl"
+
 // probeOurs 8765 上运行的是不是我们自己的服务(防止把别的程序误认成自己)
 func probeOurs() bool {
+	return probeApp(fmt.Sprintf("http://127.0.0.1:%d/api/status", portFirst))
+}
+
+// probeApp 询问 baseURL 上的 /api/status 是否由本程序提供。
+// 认不出身份(无 app 标记且不像我们自己)一律按“不是”处理,
+// 让调用方走换端口启动,而不是把窗口指向别人的页面。
+func probeApp(baseURL string) bool {
 	client := &http.Client{Timeout: 1500 * time.Millisecond}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/api/status", portFirst))
+	resp, err := client.Get(baseURL)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
 	var st struct {
-		Running bool `json:"running"`
+		App           string `json:"app"`
+		Deep          *bool  `json:"deep"`
+		LoginRequired *bool  `json:"login_required"`
 	}
-	return json.NewDecoder(resp.Body).Decode(&st) == nil
+	if json.NewDecoder(resp.Body).Decode(&st) != nil {
+		return false
+	}
+	if st.App == appMarker {
+		return true
+	}
+	// 兼容没有 app 字段的老版本 exe:它的 status 一定有 deep/login_required
+	return st.App == "" && st.Deep != nil && st.LoginRequired != nil
 }
 
 // desktopMode 双击 exe 的默认模式:本地服务 + 托盘 + Edge 速查窗口。
@@ -165,7 +201,11 @@ func desktopMode() {
 
 	// 首次运行还没有数据 -> 窗口会自动落到 /login 登录向导页,
 	// 由用户点[开始登录]再进入可见浏览器流程(不自动弹窗,避免吓到新手)
-	openWindow(port)
+	if port != portFirst {
+		openWindowFresh(port)
+	} else {
+		openWindow(port)
+	}
 	logger.Printf(">> 延河课堂 DDL 服务已启动:http://127.0.0.1:%d/", port)
 	logger.Printf(">> 托盘菜单:打开窗口 / 设置 / 退出(关闭窗口行为可在设置中修改)")
 

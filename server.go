@@ -234,7 +234,8 @@ func newMux(port int) http.Handler {
 		sendJSON(w, 200, data)
 	})
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
-		sendJSON(w, 200, map[string]bool{
+		sendJSON(w, 200, map[string]any{
+			"app":            appMarker, // 身份标记:占用同一端口的别的程序(如旧 Python 版)没有它
 			"running":        refreshRunning(),
 			"deep":           refreshRunningDeep(),
 			"login_required": loginRequired(),

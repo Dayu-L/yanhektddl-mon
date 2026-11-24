@@ -263,11 +263,22 @@ func TestRefreshBusyGuard(t *testing.T) {
 		t.Fatalf("GET /api/status 失败:%v", err)
 	}
 	defer sres.Body.Close()
-	var st map[string]bool
+	var st map[string]any
 	if err := json.NewDecoder(sres.Body).Decode(&st); err != nil {
 		t.Fatalf("/api/status 应为 JSON:%v", err)
 	}
-	if !st["running"] || !st["deep"] {
+	if st["app"] != appMarker {
+		t.Fatalf("/api/status 应带身份标记 app=%q,实际 %+v", appMarker, st)
+	}
+	if st["running"] != true || st["deep"] != true {
 		t.Fatalf("status 应报告 running+deep,实际 %+v", st)
+	}
+}
+
+// 首次启动(还没有快照)时 "/" 会重定向到 /login,用户能看到的唯一页面就是登录页;
+// 登录页若不提供 /settings 入口,前端就等于没有设置页(只能在托盘右键里找)。
+func TestLoginPageLinksToSettings(t *testing.T) {
+	if !strings.Contains(loginHTML, `href="/settings"`) {
+		t.Fatal("login.html 应提供 /settings 入口")
 	}
 }
